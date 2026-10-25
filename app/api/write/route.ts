@@ -56,6 +56,45 @@ const Actions = z.discriminatedUnion("action", [
       .max(40),
   }),
   z.object({
+    action: z.literal("log_hypertrophy_set"),
+    session_id: uuid,
+    session_block_id: uuid.nullable().optional(),
+    exercise_id: z.number().int().positive(),
+    machine_label: z.string().trim().max(80).nullable().optional(),
+    load_kg: z.number().min(0).max(1000).nullable().optional(),
+    reps: z.number().int().min(0).max(200).nullable().optional(),
+    sets_count: z.number().int().min(1).max(20).optional(),
+    side: z.enum(["both", "left", "right"]).optional(),
+    order_vs_snatch: z.enum(["before_snatch", "after_snatch", "standalone", "unknown"]).optional(),
+    /** A drop from the set it names, rather than a working set of its own. */
+    parent_set_id: uuid.nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+  }),
+  z.object({
+    action: z.literal("delete_hypertrophy_set"),
+    set_id: uuid,
+  }),
+  z.object({
+    action: z.literal("log_calisthenics_entry"),
+    session_id: uuid,
+    session_block_id: uuid.nullable().optional(),
+    skill_variation_id: z.number().int().positive(),
+    sets_count: z.number().int().min(1).max(50).nullable().optional(),
+    reps_per_set: z.number().int().min(0).max(100).nullable().optional(),
+    attempts: z.number().int().min(0).max(200).nullable().optional(),
+    successful_attempts: z.number().int().min(0).max(200).nullable().optional(),
+    best_hold_seconds: z.number().min(0).max(3600).nullable().optional(),
+    total_hold_seconds: z.number().min(0).max(36000).nullable().optional(),
+    controlled_ascent: z.boolean().nullable().optional(),
+    controlled_descent: z.boolean().nullable().optional(),
+    assistance_id: z.number().int().positive().nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+  }),
+  z.object({
+    action: z.literal("delete_calisthenics_entry"),
+    entry_id: uuid,
+  }),
+  z.object({
     action: z.literal("delete_session"),
     session_id: uuid,
   }),
@@ -316,6 +355,94 @@ export async function POST(request: Request) {
           .eq("provenance", "logged");
         if (error) throw error;
         return NextResponse.json({ metrics: data });
+      }
+
+      case "log_hypertrophy_set": {
+        const { data, error } = await db
+          .from("hypertrophy_sets")
+          .insert({
+            session_id: input.session_id,
+            session_block_id: input.session_block_id ?? null,
+            exercise_id: input.exercise_id,
+            machine_label: input.machine_label ?? null,
+            load_kg: input.load_kg ?? null,
+            reps: input.reps ?? null,
+            sets_count: input.sets_count ?? 1,
+            side: input.side ?? "both",
+            order_vs_snatch: input.order_vs_snatch ?? "unknown",
+            parent_set_id: input.parent_set_id ?? null,
+            is_drop: Boolean(input.parent_set_id),
+            notes: input.notes ?? null,
+            logged_at: new Date().toISOString(),
+            record_precision: "attempt",
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        return NextResponse.json({ set: data });
+      }
+
+      case "delete_hypertrophy_set": {
+        // Drops hang off their parent and go with it; the cascade handles that.
+        const { error } = await db.from("hypertrophy_sets").delete().eq("id", input.set_id);
+        if (error) throw error;
+        return NextResponse.json({ deleted: input.set_id });
+      }
+
+      case "log_calisthenics_entry": {
+        if (
+          input.attempts != null &&
+          input.successful_attempts != null &&
+          input.successful_attempts > input.attempts
+        ) {
+          return NextResponse.json(
+            { error: "Successes cannot exceed attempts." },
+            { status: 422 },
+          );
+        }
+        if (
+          input.best_hold_seconds != null &&
+          input.total_hold_seconds != null &&
+          input.best_hold_seconds > input.total_hold_seconds
+        ) {
+          return NextResponse.json(
+            { error: "Best hold cannot exceed total hold." },
+            { status: 422 },
+          );
+        }
+
+        const { data, error } = await db
+          .from("calisthenics_entries")
+          .insert({
+            session_id: input.session_id,
+            session_block_id: input.session_block_id ?? null,
+            skill_variation_id: input.skill_variation_id,
+            sets_count: input.sets_count ?? null,
+            reps_per_set: input.reps_per_set ?? null,
+            attempts: input.attempts ?? null,
+            successful_attempts: input.successful_attempts ?? null,
+            best_hold_seconds: input.best_hold_seconds ?? null,
+            total_hold_seconds: input.total_hold_seconds ?? null,
+            controlled_ascent: input.controlled_ascent ?? null,
+            controlled_descent: input.controlled_descent ?? null,
+            assistance_id: input.assistance_id ?? null,
+            notes: input.notes ?? null,
+            logged_at: new Date().toISOString(),
+            record_precision: "attempt",
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        return NextResponse.json({ entry: data });
+      }
+
+      case "delete_calisthenics_entry": {
+        const { error } = await db
+          .from("calisthenics_entries")
+          .delete()
+          .eq("id", input.entry_id);
+        if (error) throw error;
+        return NextResponse.json({ deleted: input.entry_id });
       }
 
       case "delete_session": {

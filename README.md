@@ -12,10 +12,10 @@ standing in a gym, one-handed, between sets.
 | Phase | Scope | State |
 | --- | --- | --- |
 | 1 | Schema, session model, snatch logging | **done** |
-| 2 | Hypertrophy logging | not started |
+| 2 | Hypertrophy logging | **done** |
 | 2a | Daily check-in, quick mode | **done** |
 | 2b | Day editor: any past day, rest days, reasons | **done** |
-| 3 | Calisthenics logging with configurable success criteria | not started |
+| 3 | Calisthenics logging with configurable success criteria | **done** |
 | 4 | Injuries | not started |
 | 5 | Weekly report and charts | not started |
 

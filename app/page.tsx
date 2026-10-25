@@ -24,6 +24,17 @@ export default async function TodayPage() {
       sessions={today.sessions}
       blocks={today.blocks}
       snatchBlocks={today.snatchBlocks}
+      hypertrophySets={today.hypertrophySets}
+      calisthenicsEntries={today.calisthenicsEntries}
+      lastExerciseSettings={today.lastExerciseSettings}
+      lastSkillSettings={today.lastSkillSettings}
+      recentExerciseIds={today.recentExerciseIds}
+      recentSkillVariationIds={today.recentSkillVariationIds}
+      muscleGroups={reference.muscleGroups}
+      exercises={reference.exercises}
+      skills={reference.skills}
+      skillVariations={reference.skillVariations}
+      assistanceTypes={reference.assistanceTypes}
       lastSession={today.lastSession}
       gyms={reference.gyms}
       presets={reference.presets}

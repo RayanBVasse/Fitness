@@ -88,6 +88,110 @@ export interface SnatchTag {
   is_active: boolean;
 }
 
+export interface MuscleGroup {
+  id: number;
+  slug: string;
+  name: string;
+  sort_order: number;
+}
+
+export interface Exercise {
+  id: number;
+  slug: string;
+  name: string;
+  muscle_group_id: number | null;
+  is_unilateral: boolean;
+  sort_order: number;
+}
+
+export interface Skill {
+  id: number;
+  slug: string;
+  name: string;
+  sort_order: number;
+}
+
+export interface SkillVariation {
+  id: number;
+  skill_id: number;
+  slug: string;
+  name: string;
+  min_hold_seconds: number | null;
+  requires_no_kick: boolean;
+  requires_controlled_ascent: boolean;
+  requires_controlled_descent: boolean;
+  criteria_notes: string | null;
+  sort_order: number;
+}
+
+export interface AssistanceType {
+  id: number;
+  slug: string;
+  name: string;
+  sort_order: number;
+}
+
+export interface HypertrophySet {
+  id: string;
+  session_id: string;
+  exercise_id: number;
+  machine_label: string | null;
+  load_kg: number | null;
+  reps: number | null;
+  sets_count: number;
+  side: BodySide;
+  order_vs_snatch: SnatchOrder;
+  parent_set_id: string | null;
+  is_drop: boolean;
+  notes: string | null;
+  volume_load_kg: number | null;
+  logged_at: string | null;
+}
+
+export interface CalisthenicsEntry {
+  id: string;
+  session_id: string;
+  skill_variation_id: number;
+  sets_count: number | null;
+  reps_per_set: number | null;
+  attempts: number | null;
+  successful_attempts: number | null;
+  best_hold_seconds: number | null;
+  total_hold_seconds: number | null;
+  controlled_ascent: boolean | null;
+  controlled_descent: boolean | null;
+  assistance_id: number | null;
+  notes: string | null;
+  logged_at: string | null;
+}
+
+/** What you lifted last time, per (gym, exercise). Drop sets excluded. */
+export interface LastExerciseSetting {
+  gym_id: number | null;
+  exercise_id: number;
+  load_kg: number | null;
+  reps: number | null;
+  sets_count: number | null;
+  machine_label: string | null;
+  last_used_on: string;
+}
+
+export interface LastSkillSetting {
+  skill_variation_id: number;
+  assistance_id: number | null;
+  best_hold_seconds: number | null;
+  sets_count: number | null;
+  last_used_on: string;
+}
+
+export interface RecentlyUsed {
+  last_used_on: string;
+  times_logged: number;
+}
+
+export type BodySide = "both" | "left" | "right";
+export type SnatchOrder = "before_snatch" | "after_snatch" | "standalone" | "unknown";
+
 export interface Session {
   id: string;
   session_date: string;

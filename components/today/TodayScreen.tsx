@@ -5,12 +5,23 @@ import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { SnatchLogger } from "@/components/today/SnatchLogger";
 import { DailyCheckIn } from "@/components/today/DailyCheckIn";
-import { Card, Empty, Pill, SectionTitle } from "@/components/ui";
+import { HypertrophyLogger } from "@/components/today/HypertrophyLogger";
+import { CalisthenicsLogger } from "@/components/today/CalisthenicsLogger";
+import { Card, Pill, SectionTitle } from "@/components/ui";
 import { londonTime, longDate, weekdayName, daysBetween } from "@/lib/time";
 import {
   WORKSTREAM_LABELS,
+  type AssistanceType,
+  type CalisthenicsEntry,
+  type Exercise,
   type FailureMode,
   type Gym,
+  type HypertrophySet,
+  type LastExerciseSetting,
+  type LastSkillSetting,
+  type MuscleGroup,
+  type Skill,
+  type SkillVariation,
   type Session,
   type SessionBlock,
   type SessionSummary,
@@ -33,6 +44,17 @@ type Props = {
   sessions: Session[];
   blocks: SessionBlock[];
   snatchBlocks: SnatchBlock[];
+  hypertrophySets: HypertrophySet[];
+  calisthenicsEntries: CalisthenicsEntry[];
+  lastExerciseSettings: LastExerciseSetting[];
+  lastSkillSettings: LastSkillSetting[];
+  recentExerciseIds: number[];
+  recentSkillVariationIds: number[];
+  muscleGroups: MuscleGroup[];
+  exercises: Exercise[];
+  skills: Skill[];
+  skillVariations: SkillVariation[];
+  assistanceTypes: AssistanceType[];
   lastSession: SessionSummary | null;
   gyms: Gym[];
   presets: WeightPreset[];
@@ -52,6 +74,17 @@ export function TodayScreen({
   sessions,
   blocks,
   snatchBlocks,
+  hypertrophySets,
+  calisthenicsEntries,
+  lastExerciseSettings,
+  lastSkillSettings,
+  recentExerciseIds,
+  recentSkillVariationIds,
+  muscleGroups,
+  exercises,
+  skills,
+  skillVariations,
+  assistanceTypes,
   lastSession,
   gyms,
   presets,
@@ -87,8 +120,12 @@ export function TodayScreen({
     sessions.find((s) => s.id === activeId) ?? sessions[sessions.length - 1] ?? null;
   const sessionBlocks = blocks.filter((b) => b.session_id === session?.id);
   const sessionSnatchBlocks = snatchBlocks.filter((b) => b.session_id === session?.id);
+  const sessionHypertrophy = hypertrophySets.filter((h) => h.session_id === session?.id);
+  const sessionCalisthenics = calisthenicsEntries.filter((c) => c.session_id === session?.id);
 
   const snatchBlock = sessionBlocks.find((b) => b.workstream === "snatch") ?? null;
+  const hypertrophyBlock = sessionBlocks.find((b) => b.workstream === "hypertrophy") ?? null;
+  const calisthenicsBlock = sessionBlocks.find((b) => b.workstream === "calisthenics") ?? null;
   return (
     <div className="space-y-4 pt-5">
       {/* Date, day and gym are shown rather than asked for. */}
@@ -357,11 +394,33 @@ export function TodayScreen({
           </Card>
 
           <Card>
-            <SectionTitle>Calisthenics · Hypertrophy</SectionTitle>
-            <Empty>
-              Logging for these two workstreams arrives in Phase 2 and Phase 3. The schema and
-              libraries are already in place, so nothing here needs re-entering later.
-            </Empty>
+            <HypertrophyLogger
+              key={`h-${session.id}`}
+              sessionId={session.id}
+              sessionBlockId={hypertrophyBlock?.id ?? null}
+              gymId={session.gym_id}
+              exercises={exercises}
+              muscleGroups={muscleGroups}
+              recentExerciseIds={recentExerciseIds}
+              lastSettings={lastExerciseSettings}
+              initialSets={sessionHypertrophy}
+              canWrite={canWrite}
+            />
+          </Card>
+
+          <Card>
+            <CalisthenicsLogger
+              key={`c-${session.id}`}
+              sessionId={session.id}
+              sessionBlockId={calisthenicsBlock?.id ?? null}
+              skills={skills}
+              variations={skillVariations}
+              assistanceTypes={assistanceTypes}
+              recentVariationIds={recentSkillVariationIds}
+              lastSettings={lastSkillSettings}
+              initialEntries={sessionCalisthenics}
+              canWrite={canWrite}
+            />
           </Card>
         </>
       )}

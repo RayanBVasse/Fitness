@@ -1,7 +1,16 @@
 import { safeRead } from "./supabase";
 import { londonToday } from "./time";
 import type {
+  AssistanceType,
+  CalisthenicsEntry,
   DailyMetric,
+  Exercise,
+  HypertrophySet,
+  LastExerciseSetting,
+  LastSkillSetting,
+  MuscleGroup,
+  Skill,
+  SkillVariation,
   DailyMetricDef,
   DayRecord,
   FailureMode,
@@ -39,12 +48,22 @@ export interface TodayData {
   sessions: Session[];
   blocks: SessionBlock[];
   snatchBlocks: SnatchBlock[];
+  hypertrophySets: HypertrophySet[];
+  calisthenicsEntries: CalisthenicsEntry[];
+  /** What was lifted last time, so the form opens with an answer in it. */
+  lastExerciseSettings: LastExerciseSetting[];
+  lastSkillSettings: LastSkillSetting[];
+  recentExerciseIds: number[];
+  recentSkillVariationIds: number[];
   attempts: SnatchAttempt[];
   lastSession: SessionSummary | null;
 }
 
 export async function getReferenceData() {
-  const [gyms, variations, presets, failureModes, tags, settings] = await Promise.all([
+  const [
+    gyms, variations, presets, failureModes, tags, settings,
+    muscleGroups, exercises, skills, skillVariations, assistanceTypes,
+  ] = await Promise.all([
     safeRead<Gym[]>((c) =>
       c.from("gyms").select("*").eq("is_active", true).order("sort_order"),
     ),
@@ -61,6 +80,21 @@ export async function getReferenceData() {
       c.from("snatch_tags").select("*").eq("is_active", true).order("sort_order"),
     ),
     safeRead<{ key: string; value: unknown }[]>((c) => c.from("settings").select("key, value")),
+    safeRead<MuscleGroup[]>((c) =>
+      c.from("muscle_groups").select("*").eq("is_active", true).order("sort_order"),
+    ),
+    safeRead<Exercise[]>((c) =>
+      c.from("exercises").select("*").eq("is_active", true).order("sort_order"),
+    ),
+    safeRead<Skill[]>((c) =>
+      c.from("skills").select("*").eq("is_active", true).order("sort_order"),
+    ),
+    safeRead<SkillVariation[]>((c) =>
+      c.from("skill_variations").select("*").eq("is_active", true).order("sort_order"),
+    ),
+    safeRead<AssistanceType[]>((c) =>
+      c.from("assistance_types").select("*").eq("is_active", true).order("sort_order"),
+    ),
   ]);
 
   const settingsMap = new Map((settings.data ?? []).map((row) => [row.key, row.value]));
@@ -71,6 +105,11 @@ export async function getReferenceData() {
     presets: presets.data ?? [],
     failureModes: failureModes.data ?? [],
     tags: tags.data ?? [],
+    muscleGroups: muscleGroups.data ?? [],
+    exercises: exercises.data ?? [],
+    skills: skills.data ?? [],
+    skillVariations: skillVariations.data ?? [],
+    assistanceTypes: assistanceTypes.data ?? [],
     objective: (settingsMap.get("snatch_objective") as SnatchObjective | undefined) ?? null,
     ladder: (settingsMap.get("snatch_warmup_ladder") as WarmupLadder | undefined) ?? null,
     heavyThresholdKg: (settingsMap.get("heavy_session_threshold_kg") as number | undefined) ?? null,
@@ -121,6 +160,12 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
       metrics,
       sessions: [],
       blocks: [],
+      hypertrophySets: [],
+      calisthenicsEntries: [],
+      lastExerciseSettings: [],
+      lastSkillSettings: [],
+      recentExerciseIds: [],
+      recentSkillVariationIds: [],
       snatchBlocks: [],
       attempts: [],
       lastSession: lastSessionResult.data?.[0] ?? null,
@@ -129,7 +174,10 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
   }
 
   const sessionIds = sessions.map((s) => s.id);
-  const [blocks, snatchBlocks] = await Promise.all([
+  const [
+    blocks, snatchBlocks, hypertrophySets, calisthenicsEntries,
+    lastExercise, lastSkill, recentExercises, recentSkills,
+  ] = await Promise.all([
     safeRead<SessionBlock[]>((c) =>
       c.from("session_blocks").select("*").in("session_id", sessionIds).order("sort_order"),
     ),
@@ -139,6 +187,20 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
         .select("*")
         .in("session_id", sessionIds)
         .order("logged_at", { ascending: true }),
+    ),
+    safeRead<HypertrophySet[]>((c) =>
+      c.from("hypertrophy_sets").select("*").in("session_id", sessionIds).order("created_at"),
+    ),
+    safeRead<CalisthenicsEntry[]>((c) =>
+      c.from("calisthenics_entries").select("*").in("session_id", sessionIds).order("created_at"),
+    ),
+    safeRead<LastExerciseSetting[]>((c) => c.from("v_last_exercise_setting").select("*")),
+    safeRead<LastSkillSetting[]>((c) => c.from("v_last_skill_setting").select("*")),
+    safeRead<{ exercise_id: number }[]>((c) =>
+      c.from("v_recent_exercises").select("exercise_id").limit(12),
+    ),
+    safeRead<{ skill_variation_id: number }[]>((c) =>
+      c.from("v_recent_skills").select("skill_variation_id").limit(12),
     ),
   ]);
 
@@ -156,6 +218,12 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     sessions,
     blocks: blocks.data ?? [],
     snatchBlocks: snatchBlocks.data ?? [],
+    hypertrophySets: hypertrophySets.data ?? [],
+    calisthenicsEntries: calisthenicsEntries.data ?? [],
+    lastExerciseSettings: lastExercise.data ?? [],
+    lastSkillSettings: lastSkill.data ?? [],
+    recentExerciseIds: (recentExercises.data ?? []).map((r) => r.exercise_id),
+    recentSkillVariationIds: (recentSkills.data ?? []).map((r) => r.skill_variation_id),
     attempts: attempts.data ?? [],
     lastSession: lastSessionResult.data?.[0] ?? null,
     error: sessionResult.error ?? blocks.error ?? snatchBlocks.error,
