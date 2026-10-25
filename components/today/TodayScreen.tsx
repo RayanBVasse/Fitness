@@ -37,7 +37,7 @@ type Props = {
   day: DayRecord | null;
   metricDefs: DailyMetricDef[];
   metrics: DailyMetric[];
-  session: Session | null;
+  sessions: Session[];
   blocks: SessionBlock[];
   snatchBlocks: SnatchBlock[];
   lastSession: SessionSummary | null;
@@ -56,7 +56,7 @@ export function TodayScreen({
   day,
   metricDefs,
   metrics,
-  session,
+  sessions,
   blocks,
   snatchBlocks,
   lastSession,
@@ -72,6 +72,9 @@ export function TodayScreen({
   // there is nothing further to check before allowing a write.
   const canWrite = true;
   const [gymId, setGymId] = useState<number | null>(null);
+  // Most days have one visit. When there are two, the latest is the one being
+  // logged into, and the other stays reachable rather than hidden.
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -87,7 +90,12 @@ export function TodayScreen({
     });
   }
 
-  const snatchBlock = blocks.find((b) => b.workstream === "snatch") ?? null;
+  const session =
+    sessions.find((s) => s.id === activeId) ?? sessions[sessions.length - 1] ?? null;
+  const sessionBlocks = blocks.filter((b) => b.session_id === session?.id);
+  const sessionSnatchBlocks = snatchBlocks.filter((b) => b.session_id === session?.id);
+
+  const snatchBlock = sessionBlocks.find((b) => b.workstream === "snatch") ?? null;
   const sessionMinutes = session ? minutesBetween(session.started_at, session.ended_at) : null;
   const elapsed =
     session?.started_at && !session.ended_at
@@ -111,9 +119,7 @@ export function TodayScreen({
           </div>
           <p className="mt-0.5 text-sm leading-snug">{objective.statement}</p>
           <div className="mt-2 flex gap-1.5">
-            <Pill tone="accent">
-              {objective.primary_load_kg} kg now {objective.primary_current_stand_rate_pct}%
-            </Pill>
+            <Pill tone="accent">{objective.primary_load_kg} kg</Pill>
             <Pill tone="stood">target {objective.primary_target_stand_rate_pct}%</Pill>
             <Pill tone="caught">{objective.secondary_load_kg} kg not yet stood</Pill>
           </div>
@@ -267,11 +273,32 @@ export function TodayScreen({
               />
             </div>
 
+            {sessions.length > 1 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {sessions.map((s, index) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setActiveId(s.id)}
+                    aria-pressed={s.id === session?.id}
+                    className="min-h-[36px] rounded-[var(--radius)] border px-3 text-xs font-semibold"
+                    style={{
+                      borderColor: s.id === session?.id ? "var(--accent)" : "var(--border)",
+                      color: s.id === session?.id ? "var(--accent)" : "var(--text-dim)",
+                    }}
+                  >
+                    Visit {index + 1}
+                    {s.started_at ? ` · ${londonTime(s.started_at)}` : ""}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
             <div className="mt-4">
               <SectionTitle>Workstreams this visit</SectionTitle>
               <div className="flex flex-wrap gap-2">
                 {WORKSTREAMS.map((workstream) => {
-                  const existing = blocks.find((b) => b.workstream === workstream);
+                  const existing = sessionBlocks.find((b) => b.workstream === workstream);
                   const minutes = existing
                     ? (existing.duration_minutes ??
                       minutesBetween(existing.started_at, existing.ended_at))
@@ -314,14 +341,18 @@ export function TodayScreen({
           </Card>
 
           <Card>
+            {/* Keyed on the session: the logger seeds its state from these
+                blocks on mount, so switching visits must remount it rather
+                than leave the previous visit's blocks on screen. */}
             <SnatchLogger
+              key={session.id}
               sessionId={session.id}
               sessionBlockId={snatchBlock?.id ?? null}
               presets={presets}
               variations={variations}
               failureModes={failureModes}
               ladder={ladder}
-              initialBlocks={snatchBlocks}
+              initialBlocks={sessionSnatchBlocks}
               canWrite={canWrite}
             />
           </Card>

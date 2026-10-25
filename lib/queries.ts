@@ -15,6 +15,7 @@ import type {
   SnatchBlock,
   SnatchObjective,
   SnatchSuccessByWeight,
+  SnatchSuccessBySource,
   SnatchVariation,
   SnatchTag,
   WarmupLadder,
@@ -34,7 +35,8 @@ export interface TodayData {
   /** Null when today has no row at all, which means nothing has been said
    *  about it — distinct from a row saying it was a rest day. */
   day: DayRecord | null;
-  session: Session | null;
+  /** Every visit on this date, oldest first. Usually one; two is legitimate. */
+  sessions: Session[];
   blocks: SessionBlock[];
   snatchBlocks: SnatchBlock[];
   attempts: SnatchAttempt[];
@@ -78,15 +80,10 @@ export async function getReferenceData() {
 
 export async function getToday(date = londonToday()): Promise<TodayData & { error: string | null }> {
   const sessionResult = await safeRead<Session[]>((c) =>
-    c
-      .from("sessions")
-      .select("*")
-      .eq("session_date", date)
-      .order("created_at", { ascending: true })
-      .limit(1),
+    c.from("sessions").select("*").eq("session_date", date).order("created_at", { ascending: true }),
   );
 
-  const session = sessionResult.data?.[0] ?? null;
+  const sessions = sessionResult.data ?? [];
 
   const dayResult = await safeRead<DayRecord[]>((c) =>
     c.from("days").select("*").eq("day", date).limit(1),
@@ -117,12 +114,12 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
       .limit(1),
   );
 
-  if (!session) {
+  if (sessions.length === 0) {
     return {
       day,
       metricDefs,
       metrics,
-      session: null,
+      sessions: [],
       blocks: [],
       snatchBlocks: [],
       attempts: [],
@@ -131,15 +128,16 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     };
   }
 
+  const sessionIds = sessions.map((s) => s.id);
   const [blocks, snatchBlocks] = await Promise.all([
     safeRead<SessionBlock[]>((c) =>
-      c.from("session_blocks").select("*").eq("session_id", session.id).order("sort_order"),
+      c.from("session_blocks").select("*").in("session_id", sessionIds).order("sort_order"),
     ),
     safeRead<SnatchBlock[]>((c) =>
       c
         .from("snatch_blocks")
         .select("*")
-        .eq("session_id", session.id)
+        .in("session_id", sessionIds)
         .order("logged_at", { ascending: true }),
     ),
   ]);
@@ -155,7 +153,7 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     day,
     metricDefs,
     metrics,
-    session,
+    sessions,
     blocks: blocks.data ?? [],
     snatchBlocks: snatchBlocks.data ?? [],
     attempts: attempts.data ?? [],
@@ -303,6 +301,16 @@ export async function getHistory(): Promise<HistoryData> {
 export async function getSnatchSuccessByWeight() {
   return safeRead<SnatchSuccessByWeight[]>((c) =>
     c.from("v_snatch_success_by_weight").select("*").order("weight_kg"),
+  );
+}
+
+/**
+ * Imported history and newly logged training, kept apart. Averaging them would
+ * dilute every new session into ten months of reconstruction.
+ */
+export async function getSnatchSuccessBySource() {
+  return safeRead<SnatchSuccessBySource[]>((c) =>
+    c.from("v_snatch_success_by_source").select("*").order("weight_kg"),
   );
 }
 

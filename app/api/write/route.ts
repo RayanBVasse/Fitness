@@ -24,6 +24,8 @@ const Actions = z.discriminatedUnion("action", [
     gym_custom_label: z.string().trim().max(80).nullable().optional(),
     session_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     started_at: z.string().datetime().nullable().optional(),
+    /** A genuinely separate visit on the same day, rather than more of the same one. */
+    force_new: z.boolean().optional(),
   }),
   z.object({
     action: z.literal("update_session"),
@@ -145,17 +147,20 @@ export async function POST(request: Request) {
     switch (input.action) {
       case "start_session": {
         const session_date = input.session_date ?? londonToday();
-        // One session per gym visit. If today already has one, return it rather
-        // than creating a second: multiple workstreams belong to one visit.
-        const existing = await db
-          .from("sessions")
-          .select("*")
-          .eq("session_date", session_date)
-          .order("created_at", { ascending: true })
-          .limit(1);
-        if (existing.error) throw existing.error;
-        if (existing.data?.length) {
-          return NextResponse.json({ session: existing.data[0], reused: true });
+        // A session is one gym visit. Three workstreams in one visit belong to
+        // the same session, so the default is to reuse today's — but a morning
+        // and an evening visit are two visits, and `force_new` says so.
+        if (!input.force_new) {
+          const existing = await db
+            .from("sessions")
+            .select("*")
+            .eq("session_date", session_date)
+            .order("created_at", { ascending: true })
+            .limit(1);
+          if (existing.error) throw existing.error;
+          if (existing.data?.length) {
+            return NextResponse.json({ session: existing.data[0], reused: true });
+          }
         }
         const { data, error } = await db
           .from("sessions")

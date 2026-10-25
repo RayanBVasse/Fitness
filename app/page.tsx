@@ -21,7 +21,7 @@ export default async function TodayPage() {
       day={today.day}
       metricDefs={today.metricDefs}
       metrics={today.metrics}
-      session={today.session}
+      sessions={today.sessions}
       blocks={today.blocks}
       snatchBlocks={today.snatchBlocks}
       lastSession={today.lastSession}

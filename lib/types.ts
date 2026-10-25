@@ -174,11 +174,18 @@ export interface SnatchSuccessByWeight {
   receive_rate_pct: number | null;
 }
 
-/** settings.snatch_objective */
+export interface SnatchSuccessBySource extends SnatchSuccessByWeight {
+  source: "imported" | "logged";
+}
+
+/**
+ * settings.snatch_objective. The current rate is deliberately absent: it is
+ * computed from the rows, because a stored figure cannot stay honest as the
+ * data behind it changes.
+ */
 export interface SnatchObjective {
   primary_load_kg: number;
   primary_target_stand_rate_pct: number;
-  primary_current_stand_rate_pct: number;
   primary_sessions_per_week: number;
   secondary_load_kg: number;
   secondary_goal: string;
