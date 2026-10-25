@@ -89,6 +89,12 @@ Expected after promoting — check the run against these:
 13 nutrition rows stay `pending_review` on purpose: nutrition is a later
 category and has no target table yet. They are staged so nothing is lost.
 
+The sources are recovered chat records, so a numeric field occasionally holds
+prose — `reps_per_set` carries `'4-6'`, `'6-7'`, `'3-5'` and `'a_couple'`.
+Every cast in the promotion goes through `safe_smallint` / `safe_numeric`,
+which return null instead of throwing, and the original text is appended to
+that row's notes. A range is never averaged into a number nobody recorded.
+
 Promotion is idempotent — every target row carries `source_record_id` and
 nothing is inserted twice, so a re-run is a no-op. Rows whose exercise or skill
 cannot be resolved are left pending and reported rather than silently dropped.

@@ -18,6 +18,38 @@
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
+-- Safe casts.
+--
+-- The sources are recovered chat records, so a numeric field sometimes holds
+-- prose: reps_per_set carries '4-6', '6-7', '3-5' and 'a_couple'. A direct
+-- ::smallint aborts the whole promotion on the first one.
+--
+-- These return null rather than throwing, and unparsed_suffix keeps the
+-- original text on the row's notes so the detail is preserved rather than
+-- discarded. A range is not silently averaged into a number that was never
+-- recorded.
+-- ---------------------------------------------------------------------------
+create or replace function fitness.safe_smallint(v text)
+returns smallint language sql immutable as $$
+  select case when v ~ '^-?\d+$' then v::smallint end;
+$$;
+
+create or replace function fitness.safe_numeric(v text)
+returns numeric language sql immutable as $$
+  select case when v ~ '^-?\d+(\.\d+)?$' then v::numeric end;
+$$;
+
+create or replace function fitness.unparsed_suffix(p jsonb, fields text[])
+returns text language sql immutable as $$
+  select coalesce(
+           ' [' || string_agg(f || ' recorded as "' || (p->>f) || '"', '; ') || ']',
+           '')
+    from unnest(fields) as f
+   where p ? f
+     and (p->>f) !~ '^-?\d+(\.\d+)?$';
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Which source table feeds which target.
 -- ---------------------------------------------------------------------------
 create or replace function fitness.import_target(source_table text)
@@ -151,19 +183,25 @@ begin
     quality_10, straps, failure_mode_id, notes,
     provenance, record_precision, record_quality, source_record_id)
   select s.id, sb.id, v.id,
-         (r.payload->>'weight_kg')::numeric,
-         (r.payload->>'sets_count')::smallint,
-         (r.payload->>'reps_per_set')::smallint,
-         coalesce((r.payload->>'attempts')::smallint, (r.payload->>'reported_repetitions')::smallint),
-         (r.payload->>'full_stand_successes')::smallint,
-         (r.payload->>'received_not_stood')::smallint,
-         coalesce((r.payload->>'dropped')::smallint, (r.payload->>'misses_or_drops')::smallint),
-         (r.payload->>'quality_10')::smallint,
+         fitness.safe_numeric(r.payload->>'weight_kg'),
+         fitness.safe_smallint(r.payload->>'sets_count'),
+         fitness.safe_smallint(r.payload->>'reps_per_set'),
+         coalesce(fitness.safe_smallint(r.payload->>'attempts'),
+                  fitness.safe_smallint(r.payload->>'reported_repetitions')),
+         fitness.safe_smallint(r.payload->>'full_stand_successes'),
+         fitness.safe_smallint(r.payload->>'received_not_stood'),
+         coalesce(fitness.safe_smallint(r.payload->>'dropped'),
+                  fitness.safe_smallint(r.payload->>'misses_or_drops')),
+         fitness.safe_smallint(r.payload->>'quality_10'),
          (r.payload->>'straps')::boolean,
          fm.id,
-         r.notes,
+         nullif(coalesce(r.notes, '') || fitness.unparsed_suffix(r.payload,
+           array['weight_kg','sets_count','reps_per_set','attempts',
+                 'reported_repetitions','full_stand_successes',
+                 'received_not_stood','dropped','misses_or_drops','quality_10']), ''),
          case when r.source_table like 'workbook%' then 'workbook_import' else 'historical_reconstruction' end::fitness.provenance,
-         case when coalesce((r.payload->>'attempts')::smallint, (r.payload->>'reported_repetitions')::smallint) is null
+         case when coalesce(fitness.safe_smallint(r.payload->>'attempts'),
+                            fitness.safe_smallint(r.payload->>'reported_repetitions')) is null
               then 'qualitative' else 'block' end::fitness.record_precision,
          r.record_quality,
          r.record_id
@@ -196,12 +234,16 @@ begin
     order_vs_snatch, is_drop, notes,
     provenance, record_precision, record_quality, source_record_id)
   select s.id, sb.id, coalesce(e.id, al.exercise_id),
-         coalesce((r.payload->>'load_kg')::numeric, (r.payload->>'weight_kg')::numeric),
-         coalesce((r.payload->>'reps')::smallint, (r.payload->>'reps_per_set')::smallint),
-         coalesce((r.payload->>'sets_count')::smallint, (r.payload->>'sets')::smallint, 1),
+         coalesce(fitness.safe_numeric(r.payload->>'load_kg'),
+                  fitness.safe_numeric(r.payload->>'weight_kg')),
+         coalesce(fitness.safe_smallint(r.payload->>'reps'),
+                  fitness.safe_smallint(r.payload->>'reps_per_set')),
+         coalesce(fitness.safe_smallint(r.payload->>'sets_count'),
+                  fitness.safe_smallint(r.payload->>'sets'), 1),
          coalesce((r.payload->>'order_vs_snatch')::fitness.snatch_order, 'unknown'),
          coalesce(r.payload->>'exercise', '') like '%\_drop',
-         r.notes,
+         nullif(coalesce(r.notes, '') || fitness.unparsed_suffix(r.payload,
+           array['load_kg','weight_kg','reps','reps_per_set','sets_count','sets']), ''),
          case when r.source_table like 'workbook%' then 'workbook_import' else 'historical_reconstruction' end::fitness.provenance,
          'block'::fitness.record_precision,
          r.record_quality,
@@ -227,9 +269,9 @@ begin
     order_vs_snatch, is_drop, parent_set_id, notes,
     provenance, record_precision, record_quality, source_record_id)
   select p.session_id, p.session_block_id, p.exercise_id,
-         (r.payload->>'drop_load_kg')::numeric,
-         coalesce((r.payload->>'drop_reps')::smallint, p.reps),
-         coalesce((r.payload->>'drop_sets')::smallint, 1),
+         fitness.safe_numeric(r.payload->>'drop_load_kg'),
+         coalesce(fitness.safe_smallint(r.payload->>'drop_reps'), p.reps),
+         coalesce(fitness.safe_smallint(r.payload->>'drop_sets'), 1),
          p.order_vs_snatch, true, p.id,
          'Drop set recorded on the parent row in the August workbook.',
          'workbook_import'::fitness.provenance,
@@ -251,16 +293,21 @@ begin
     assistance_id, notes,
     provenance, record_precision, record_quality, source_record_id)
   select s.id, sb.id, sv.id,
-         coalesce((r.payload->>'sets_count')::smallint, (r.payload->>'sets')::smallint),
-         (r.payload->>'reps_per_set')::smallint,
-         (r.payload->>'attempts')::smallint,
-         (r.payload->>'successful_attempts')::smallint,
-         coalesce((r.payload->>'best_hold_seconds')::numeric, (r.payload->>'hold_seconds')::numeric),
-         (r.payload->>'total_hold_seconds')::numeric,
+         coalesce(fitness.safe_smallint(r.payload->>'sets_count'),
+                  fitness.safe_smallint(r.payload->>'sets')),
+         fitness.safe_smallint(r.payload->>'reps_per_set'),
+         fitness.safe_smallint(r.payload->>'attempts'),
+         fitness.safe_smallint(r.payload->>'successful_attempts'),
+         coalesce(fitness.safe_numeric(r.payload->>'best_hold_seconds'),
+                  fitness.safe_numeric(r.payload->>'hold_seconds')),
+         fitness.safe_numeric(r.payload->>'total_hold_seconds'),
          a.id,
-         r.notes,
+         nullif(coalesce(r.notes, '') || fitness.unparsed_suffix(r.payload,
+           array['sets_count','sets','reps_per_set','attempts','successful_attempts',
+                 'best_hold_seconds','hold_seconds','total_hold_seconds']), ''),
          case when r.source_table like 'workbook%' then 'workbook_import' else 'historical_reconstruction' end::fitness.provenance,
-         case when (r.payload->>'attempts') is null then 'qualitative' else 'block' end::fitness.record_precision,
+         case when fitness.safe_smallint(r.payload->>'attempts') is null
+              then 'qualitative' else 'block' end::fitness.record_precision,
          r.record_quality,
          r.record_id
     from fitness.import_records r
@@ -280,7 +327,7 @@ begin
     injury_id, session_id, obs_date, pain_during_0_10, notes,
     provenance, record_quality, source_record_id)
   select i.id, s.id, r.observation_date,
-         case when r.payload->>'unit' = '0-10' then (r.payload->>'value')::smallint end,
+         case when r.payload->>'unit' = '0-10' then fitness.safe_smallint(r.payload->>'value') end,
          r.notes,
          'historical_reconstruction'::fitness.provenance,
          r.record_quality,
@@ -302,8 +349,9 @@ begin
     provenance, record_quality, source_record_id)
   select r.observation_date,
          r.payload->>'metric',
-         case when (r.payload->>'value') ~ '^-?[0-9]+(\.[0-9]+)?$' then (r.payload->>'value')::numeric end,
-         case when (r.payload->>'value') !~ '^-?[0-9]+(\.[0-9]+)?$' then r.payload->>'value' end,
+         fitness.safe_numeric(r.payload->>'value'),
+         case when fitness.safe_numeric(r.payload->>'value') is null
+              then r.payload->>'value' end,
          r.payload->>'unit',
          r.notes,
          'historical_reconstruction'::fitness.provenance,
@@ -337,7 +385,7 @@ begin
   insert into fitness.daily_metrics (
     metric_date, metric, value_numeric, notes,
     provenance, record_quality, source_record_id)
-  select r.observation_date, m.key, m.value::numeric, r.notes,
+  select r.observation_date, m.key, fitness.safe_numeric(m.value), r.notes,
          'workbook_import'::fitness.provenance, r.record_quality,
          r.record_id || ':' || m.key
     from fitness.import_records r
@@ -413,6 +461,9 @@ revoke all on function fitness.promote_imports(boolean) from public;
 revoke all on function fitness.promote_imports(boolean) from anon, authenticated;
 revoke all on function fitness.import_target(text) from public;
 revoke all on function fitness.import_workstream(text) from public;
+revoke all on function fitness.safe_smallint(text) from public;
+revoke all on function fitness.safe_numeric(text) from public;
+revoke all on function fitness.unparsed_suffix(jsonb, text[]) from public;
 
 revoke select on fitness.import_preview, fitness.import_conflicts, fitness.import_superseded
   from anon, authenticated;
