@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+/*
+  Built to be used standing in a gym, one-handed, phone in one hand.
+  Tap targets are never below 44px. Type never below 14px.
+*/
+
+:root {
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --surface-2: #f0f0f2;
+  --border: #d9d9de;
+  --text: #15151a;
+  --text-dim: #5e5e6b;
+  --text-faint: #8b8b98;
+
+  --accent: #1f6feb;
+  --accent-text: #ffffff;
+
+  --stood: #157f3d;
+  --stood-bg: #e3f4e8;
+  --caught: #a86300;
+  --caught-bg: #fdf0da;
+  --missed: #b3261e;
+  --missed-bg: #fce9e7;
+
+  --radius: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c0c0f;
+    --surface: #16161b;
+    --surface-2: #1f1f26;
+    --border: #2d2d36;
+    --text: #f2f2f5;
+    --text-dim: #a2a2b0;
+    --text-faint: #6f6f7d;
+
+    --accent: #4d8dfd;
+    --accent-text: #0c0c0f;
+
+    --stood: #4ddc83;
+    --stood-bg: #13301e;
+    --caught: #f3b84a;
+    --caught-bg: #332507;
+    --missed: #ff7a70;
+    --missed-bg: #351715;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0c0c0f;
+  --surface: #16161b;
+  --surface-2: #1f1f26;
+  --border: #2d2d36;
+  --text: #f2f2f5;
+  --text-dim: #a2a2b0;
+  --text-faint: #6f6f7d;
+
+  --accent: #4d8dfd;
+  --accent-text: #0c0c0f;
+
+  --stood: #4ddc83;
+  --stood-bg: #13301e;
+  --caught: #f3b84a;
+  --caught-bg: #332507;
+  --missed: #ff7a70;
+  --missed-bg: #351715;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-text-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-stood: var(--stood);
+  --color-stood-bg: var(--stood-bg);
+  --color-caught: var(--caught);
+  --color-caught-bg: var(--caught-bg);
+  --color-missed: var(--missed);
+  --color-missed-bg: var(--missed-bg);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  /* Room for the fixed bottom nav plus the iOS home indicator. */
+  padding-bottom: calc(68px + env(safe-area-inset-bottom));
+  overscroll-behavior-y: contain;
+}
+
+/* Numbers in tables and tallies should not jitter as they change. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
