@@ -18,7 +18,8 @@ standing in a gym, one-handed, between sets.
 | 3 | Calisthenics logging with configurable success criteria | **done** |
 | 4 | Injuries | not started |
 | 5 | Weekly report and charts | not started |
-| 6 | Observatory Coach | designed, not built — see [docs/coach-design.md](docs/coach-design.md) |
+| 6a | Observatory Coach — Phase A, read-only Q&A | **done** — see [docs/coach-design.md](docs/coach-design.md) |
+| 6b | Coach — hypothesis register, journal extraction | not started |
 
 Backfill import: **run.** 401 rows staged, 373 promoted into 79 sessions. See below.
 
@@ -140,6 +141,7 @@ ever consulted.
 | `SUPABASE_SERVICE_ROLE_KEY` | server only | The only database credential |
 | `AUTH_SECRET` | server only | Signs the session cookie; changing it signs out every device |
 | `FITNESS_WRITE_PASSCODE` | server only | The passcode that unlocks the app |
+| `ANTHROPIC_API_KEY` | server only | The Coach. Without it the Coach returns 503; the rest of the app is unaffected |
 
 Login is rate-limited to 8 attempts per 10 minutes per IP, compared in constant
 time, and the failure message does not distinguish causes. Signing out performs

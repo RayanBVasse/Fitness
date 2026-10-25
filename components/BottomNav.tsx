@@ -7,6 +7,7 @@ const DESTINATIONS = [
   { href: "/", label: "Today" },
   { href: "/history", label: "History" },
   { href: "/progress", label: "Progress" },
+  { href: "/coach", label: "Coach" },
   { href: "/settings", label: "Settings" },
 ] as const;
 
