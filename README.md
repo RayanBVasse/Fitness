@@ -126,6 +126,11 @@ default rather than by remembering to protect it, and it **fails closed** — if
 Reads and writes both run server-side with the service-role key. No database
 credential reaches the browser.
 
+`service_role` needs its own `USAGE` on the `fitness` schema and rights on the
+objects in it (`0006`). Bypassing RLS is not the same as having privileges —
+without those grants every query fails at the schema boundary before RLS is
+ever consulted.
+
 | Variable | Where | Purpose |
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | public | Project URL; opens nothing on its own |
