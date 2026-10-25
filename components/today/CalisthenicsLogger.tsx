@@ -70,6 +70,7 @@ export function CalisthenicsLogger({
 
   function choose(id: number) {
     setVariationId(id);
+    setShowAll(false);
     setAttempts(0);
     setSuccesses(0);
     setBestHold("");

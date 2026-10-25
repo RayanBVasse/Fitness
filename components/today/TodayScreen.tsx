@@ -41,6 +41,7 @@ type Props = {
   day: DayRecord | null;
   metricDefs: DailyMetricDef[];
   metrics: DailyMetric[];
+  lastMetricValues: (DailyMetric & { metric_date: string })[];
   sessions: Session[];
   blocks: SessionBlock[];
   snatchBlocks: SnatchBlock[];
@@ -71,6 +72,7 @@ export function TodayScreen({
   day,
   metricDefs,
   metrics,
+  lastMetricValues,
   sessions,
   blocks,
   snatchBlocks,
@@ -97,7 +99,11 @@ export function TodayScreen({
   // Reaching this screen at all means the middleware accepted a session, so
   // there is nothing further to check before allowing a write.
   const canWrite = true;
-  const [gymId, setGymId] = useState<number | null>(null);
+  // You usually go back to the same gym, so that is the default rather than
+  // a blank. Changing it is one tap.
+  const [gymId, setGymId] = useState<number | null>(
+    () => gyms.find((g) => g.name === lastSession?.gym)?.id ?? null,
+  );
   // Most days have one visit. When there are two, the latest is the one being
   // logged into, and the other stays reachable rather than hidden.
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -152,7 +158,13 @@ export function TodayScreen({
 
       {metricDefs.length > 0 ? (
         <Card>
-          <DailyCheckIn date={date} defs={metricDefs} saved={metrics} canWrite={canWrite} />
+          <DailyCheckIn
+            date={date}
+            defs={metricDefs}
+            saved={metrics}
+            lastValues={lastMetricValues}
+            canWrite={canWrite}
+          />
         </Card>
       ) : null}
 

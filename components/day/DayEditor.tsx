@@ -28,6 +28,7 @@ type Props = {
   loggedCounts: Record<string, number>;
   metricDefs: DailyMetricDef[];
   metrics: DailyMetric[];
+  lastMetricValues: (DailyMetric & { metric_date: string })[];
   isToday: boolean;
 };
 
@@ -38,11 +39,14 @@ export function DayEditor({
   loggedCounts,
   metricDefs,
   metrics,
+  lastMetricValues,
   isToday,
 }: Props) {
   const router = useRouter();
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Which session is asking "are you sure", and about how many records.
+  const [confirming, setConfirming] = useState<{ id: string; logged: number } | null>(null);
 
   const status = day?.status ?? "unlogged";
   const hasSessions = sessions.length > 0;
@@ -172,25 +176,57 @@ export function DayEditor({
                       {session.provenance !== "logged" ? " · reconstructed" : ""}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    disabled={busy || logged > 0}
-                    title={logged > 0 ? "Delete its records first" : "Delete this empty session"}
-                    onClick={() => run(async () => {
-                      await write({ action: "delete_session", session_id: session.id });
-                    })}
-                    className="min-h-[36px] shrink-0 rounded-[var(--radius)] border border-border px-3 text-xs font-semibold disabled:opacity-30"
-                    style={{ color: logged > 0 ? "var(--text-faint)" : "var(--missed)" }}
-                  >
-                    Delete
-                  </button>
+                  {confirming?.id === session.id ? (
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => run(async () => {
+                          await write({
+                            action: "delete_session",
+                            session_id: session.id,
+                            discard_records: true,
+                          });
+                          setConfirming(null);
+                        })}
+                        className="min-h-[36px] rounded-[var(--radius)] px-3 text-xs font-bold"
+                        style={{ background: "var(--missed)", color: "var(--surface)" }}
+                      >
+                        Discard {confirming.logged}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirming(null)}
+                        className="min-h-[36px] rounded-[var(--radius)] border border-border px-2 text-xs font-semibold text-text-dim"
+                      >
+                        Keep
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        logged > 0
+                          ? setConfirming({ id: session.id, logged })
+                          : run(async () => {
+                              await write({ action: "delete_session", session_id: session.id });
+                            })
+                      }
+                      className="min-h-[36px] shrink-0 rounded-[var(--radius)] border border-border px-3 text-xs font-semibold disabled:opacity-30"
+                      style={{ color: "var(--missed)" }}
+                    >
+                      Delete
+                    </button>
+                  )}
                 </li>
               );
             })}
           </ul>
           <p className="mt-2 text-[11px] leading-snug text-text-faint">
-            A session with records against it cannot be deleted here — changing your mind about an
-            empty session is routine, discarding logged lifts is not.
+            Deleting a session with records asks first and names the count. Changing your mind
+            about an empty session is routine; discarding logged training should be deliberate,
+            but it should not be a dead end.
           </p>
         </Card>
       ) : null}
@@ -199,7 +235,13 @@ export function DayEditor({
         <Card>
           {/* The same check-in as Today, pointed at this date. Context arrives
               late, and a rest day often has the most of it. */}
-          <DailyCheckIn date={date} defs={metricDefs} saved={metrics} canWrite={!busy} />
+          <DailyCheckIn
+            date={date}
+            defs={metricDefs}
+            saved={metrics}
+            lastValues={lastMetricValues}
+            canWrite={!busy}
+          />
         </Card>
       ) : null}
 

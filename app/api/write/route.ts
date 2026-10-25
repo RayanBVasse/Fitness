@@ -97,6 +97,8 @@ const Actions = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("delete_session"),
     session_id: uuid,
+    /** Set only after the user confirmed a count they were shown. */
+    discard_records: z.boolean().optional(),
   }),
   z.object({
     action: z.literal("add_block"),
@@ -460,10 +462,15 @@ export async function POST(request: Request) {
         const failed = counts.find((c) => c.error);
         if (failed?.error) throw failed.error;
         const logged = counts.reduce((total, c) => total + (c.count ?? 0), 0);
-        if (logged > 0) {
+        // Refuses by default so a stray tap cannot discard training. It is
+        // surmountable, not a dead end: the interface shows the count and asks,
+        // and `discard_records` is that answer. Cascades remove the children.
+        if (logged > 0 && !input.discard_records) {
           return NextResponse.json(
             {
-              error: `That session has ${logged} record${logged === 1 ? "" : "s"} logged against it. Delete those first.`,
+              error: `That session has ${logged} record${logged === 1 ? "" : "s"} logged against it.`,
+              logged,
+              needs_confirmation: true,
             },
             { status: 409 },
           );

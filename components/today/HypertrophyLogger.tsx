@@ -67,6 +67,8 @@ export function HypertrophyLogger({
 
   function choose(id: number) {
     setExerciseId(id);
+    // You found what you came for; the other 25 are just distance to scroll.
+    setShowAll(false);
     const previous = lastFor(id);
     setLoad(previous?.setting.load_kg != null ? String(Number(previous.setting.load_kg)) : "");
     setReps(previous?.setting.reps != null ? String(previous.setting.reps) : "");

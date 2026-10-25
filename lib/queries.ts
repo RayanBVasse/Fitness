@@ -50,6 +50,10 @@ export interface TodayData {
   snatchBlocks: SnatchBlock[];
   hypertrophySets: HypertrophySet[];
   calisthenicsEntries: CalisthenicsEntry[];
+  /** The most recent logged value per metric, from before today. Shown as a
+   *  reference beside each field and never filled in: a value you did not
+   *  measure today is not a measurement of today. */
+  lastMetricValues: (DailyMetric & { metric_date: string })[];
   /** What was lifted last time, so the form opens with an answer in it. */
   lastExerciseSettings: LastExerciseSetting[];
   lastSkillSettings: LastSkillSetting[];
@@ -162,6 +166,7 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
       blocks: [],
       hypertrophySets: [],
       calisthenicsEntries: [],
+      lastMetricValues: [],
       lastExerciseSettings: [],
       lastSkillSettings: [],
       recentExerciseIds: [],
@@ -176,7 +181,7 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
   const sessionIds = sessions.map((s) => s.id);
   const [
     blocks, snatchBlocks, hypertrophySets, calisthenicsEntries,
-    lastExercise, lastSkill, recentExercises, recentSkills,
+    priorMetrics, lastExercise, lastSkill, recentExercises, recentSkills,
   ] = await Promise.all([
     safeRead<SessionBlock[]>((c) =>
       c.from("session_blocks").select("*").in("session_id", sessionIds).order("sort_order"),
@@ -193,6 +198,15 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     ),
     safeRead<CalisthenicsEntry[]>((c) =>
       c.from("calisthenics_entries").select("*").in("session_id", sessionIds).order("created_at"),
+    ),
+    safeRead<(DailyMetric & { metric_date: string })[]>((c) =>
+      c
+        .from("daily_metrics")
+        .select("metric, value_numeric, value_text, metric_date")
+        .eq("provenance", "logged")
+        .lt("metric_date", date)
+        .order("metric_date", { ascending: false })
+        .limit(400),
     ),
     safeRead<LastExerciseSetting[]>((c) => c.from("v_last_exercise_setting").select("*")),
     safeRead<LastSkillSetting[]>((c) => c.from("v_last_skill_setting").select("*")),
@@ -220,6 +234,7 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     snatchBlocks: snatchBlocks.data ?? [],
     hypertrophySets: hypertrophySets.data ?? [],
     calisthenicsEntries: calisthenicsEntries.data ?? [],
+    lastMetricValues: dedupeByMetric(priorMetrics.data ?? []),
     lastExerciseSettings: lastExercise.data ?? [],
     lastSkillSettings: lastSkill.data ?? [],
     recentExerciseIds: (recentExercises.data ?? []).map((r) => r.exercise_id),
@@ -366,6 +381,16 @@ export async function getHistory(): Promise<HistoryData> {
   };
 }
 
+/** Rows arrive newest first, so the first of each metric is the latest. */
+function dedupeByMetric<T extends { metric: string }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (seen.has(row.metric)) return false;
+    seen.add(row.metric);
+    return true;
+  });
+}
+
 export interface DayDetail {
   date: string;
   day: DayRecord | null;
@@ -374,12 +399,13 @@ export interface DayDetail {
   loggedCounts: Record<string, number>;
   metricDefs: DailyMetricDef[];
   metrics: DailyMetric[];
+  lastMetricValues: (DailyMetric & { metric_date: string })[];
   error: string | null;
 }
 
 /** Everything attached to one calendar day, for the day editor. */
 export async function getDayDetail(date: string): Promise<DayDetail> {
-  const [dayResult, sessionResult, defsResult, metricsResult] = await Promise.all([
+  const [dayResult, sessionResult, defsResult, metricsResult, priorResult] = await Promise.all([
     safeRead<DayRecord[]>((c) => c.from("days").select("*").eq("day", date).limit(1)),
     safeRead<Session[]>((c) =>
       c.from("sessions").select("*").eq("session_date", date).order("created_at"),
@@ -393,6 +419,15 @@ export async function getDayDetail(date: string): Promise<DayDetail> {
         .select("metric, value_numeric, value_text")
         .eq("metric_date", date)
         .eq("provenance", "logged"),
+    ),
+    safeRead<(DailyMetric & { metric_date: string })[]>((c) =>
+      c
+        .from("daily_metrics")
+        .select("metric, value_numeric, value_text, metric_date")
+        .eq("provenance", "logged")
+        .lt("metric_date", date)
+        .order("metric_date", { ascending: false })
+        .limit(400),
     ),
   ]);
 
@@ -424,6 +459,7 @@ export async function getDayDetail(date: string): Promise<DayDetail> {
     loggedCounts,
     metricDefs: defsResult.data ?? [],
     metrics: metricsResult.data ?? [],
+    lastMetricValues: dedupeByMetric(priorResult.data ?? []),
     error: sessionResult.error ?? defsResult.error,
   };
 }

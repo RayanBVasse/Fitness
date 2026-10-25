@@ -23,12 +23,14 @@ type Props = {
   date: string;
   defs: DailyMetricDef[];
   saved: DailyMetric[];
+  /** The last value recorded before this day, shown as a reference only. */
+  lastValues?: (DailyMetric & { metric_date: string })[];
   canWrite: boolean;
 };
 
 type Draft = Record<string, { numeric: number | null; text: string | null }>;
 
-export function DailyCheckIn({ date, defs, saved, canWrite }: Props) {
+export function DailyCheckIn({ date, defs, saved, lastValues = [], canWrite }: Props) {
   const router = useRouter();
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -143,6 +145,7 @@ export function DailyCheckIn({ date, defs, saved, canWrite }: Props) {
               key={def.slug}
               def={def}
               value={draft[def.slug]?.numeric ?? null}
+              last={lastValues.find((v) => v.metric === def.slug) ?? null}
               disabled={!canWrite || busy}
               onChange={(numeric) => set(def.slug, { numeric })}
             />
@@ -185,14 +188,43 @@ export function DailyCheckIn({ date, defs, saved, canWrite }: Props) {
   );
 }
 
+function LastHint({
+  last,
+  unit,
+  disabled,
+  onAdopt,
+}: {
+  last: (DailyMetric & { metric_date: string }) | null;
+  unit: string | null;
+  disabled: boolean;
+  onAdopt: (value: number) => void;
+}) {
+  if (!last || last.value_numeric == null) return null;
+  const value = Number(last.value_numeric);
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onAdopt(value)}
+      className="tnum text-[11px] text-text-faint underline underline-offset-2 disabled:no-underline"
+      title="Use this value for today"
+    >
+      last {value}
+      {unit ? ` ${unit}` : ""} · {last.metric_date.slice(5)}
+    </button>
+  );
+}
+
 function ScaleField({
   def,
   value,
+  last,
   disabled,
   onChange,
 }: {
   def: DailyMetricDef;
   value: number | null;
+  last: (DailyMetric & { metric_date: string }) | null;
   disabled: boolean;
   onChange: (value: number | null) => void;
 }) {
@@ -242,7 +274,10 @@ function ScaleField({
         style={{ accentColor: value === null ? "var(--text-faint)" : "var(--accent)" }}
         aria-valuetext={value === null ? "not recorded" : String(value)}
       />
-      {def.help ? <p className="text-[11px] text-text-faint">{def.help}</p> : null}
+      <div className="flex items-center justify-between gap-2">
+        {def.help ? <p className="text-[11px] text-text-faint">{def.help}</p> : <span />}
+        <LastHint last={last} unit={def.unit} disabled={disabled} onAdopt={onChange} />
+      </div>
     </div>
   );
 }
@@ -250,11 +285,13 @@ function ScaleField({
 function NumberField({
   def,
   value,
+  last,
   disabled,
   onChange,
 }: {
   def: DailyMetricDef;
   value: number | null;
+  last: (DailyMetric & { metric_date: string }) | null;
   disabled: boolean;
   onChange: (value: number | null) => void;
 }) {
@@ -265,6 +302,7 @@ function NumberField({
           {def.label}
         </label>
         {def.help ? <p className="text-[11px] leading-snug text-text-faint">{def.help}</p> : null}
+        <LastHint last={last} unit={def.unit} disabled={disabled} onAdopt={onChange} />
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         <input

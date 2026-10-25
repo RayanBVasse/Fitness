@@ -166,6 +166,34 @@ export function SnatchLogger({
     ? [...ladder.warmup.map((w) => w.weight_kg), ...ladder.working]
     : [];
 
+  /**
+   * Opens the usual ladder in one tap. It creates the blocks and nothing else:
+   * outcomes stay untapped, because a warm-up the app assumed you did is a
+   * lift that never happened.
+   */
+  function openLadder() {
+    const existing = new Set(blocks.map((b) => Number(b.weight_kg)));
+    const wanted = ladderWeights.filter((w) => !existing.has(w));
+    if (!wanted.length) return;
+    run(async () => {
+      const created: SnatchBlock[] = [];
+      for (const weight of wanted) {
+        const result = await write<{ weight_block: SnatchBlock }>({
+          action: "open_weight_block",
+          session_id: sessionId,
+          session_block_id: sessionBlockId,
+          weight_kg: weight,
+          variation_id: variationId,
+          straps,
+          is_warmup: ladder ? ladder.warmup.some((w) => w.weight_kg === weight) : false,
+        });
+        created.push(result.weight_block);
+      }
+      setBlocks((prev) => [...prev, ...created]);
+      if (created.length) setOpenBlockId(created[0].id);
+    });
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -235,9 +263,21 @@ export function SnatchLogger({
             );
           })}
         </div>
+        {ladder && ladderWeights.some((w) => !blocks.some((b) => Number(b.weight_kg) === w)) ? (
+          <button
+            type="button"
+            disabled={!canWrite || busy}
+            onClick={openLadder}
+            className="mt-2 min-h-[44px] w-full rounded-[var(--radius)] border border-dashed border-border text-sm font-semibold text-text-dim disabled:opacity-40"
+          >
+            Open usual ladder ({ladderWeights.map((w) => trim(w)).join(" · ")})
+          </button>
+        ) : null}
+
         <p className="mt-2 text-[11px] text-text-faint">
           Outlined loads are your usual ladder. Opening a load starts a block; each tap below
-          records one attempt at it.
+          records one attempt at it. The ladder opens the blocks only — outcomes are always
+          yours to tap.
         </p>
       </div>
 

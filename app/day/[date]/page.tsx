@@ -23,6 +23,7 @@ export default async function DayPage({ params }: { params: Promise<{ date: stri
       loggedCounts={detail.loggedCounts}
       metricDefs={detail.metricDefs}
       metrics={detail.metrics}
+      lastMetricValues={detail.lastMetricValues}
       isToday={date === londonToday()}
     />
   );
