@@ -17,8 +17,7 @@ standing in a gym, one-handed, between sets.
 | 4 | Injuries | not started |
 | 5 | Weekly report and charts | not started |
 
-Backfill import (Jan–Oct 2026) stages into `fitness.import_records` and is
-reviewed before anything reaches the performance tables. Not yet run.
+Backfill import: **staged and ready, not yet run.** See below.
 
 ## Setup
 
@@ -41,6 +40,68 @@ reviewed before anything reaches the performance tables. Not yet run.
 ```bash
 npm run dev
 ```
+
+## Backfill import
+
+Two sources are staged into `fitness.import_records`, which anon cannot read:
+
+| Batch | Rows | Nature |
+| --- | --- | --- |
+| `backfill-pack-v0.1` | 311 | Reconstruction from prior chat records, Jan–Oct 2026 |
+| `august-2026-workbook` | 90 | P1 Physiology Observatory workbook, 1–16 Aug 2026 |
+
+Where both describe the same date **and** the same discipline, the workbook
+wins — it carries sets, reps, quality, straps, failure mode, gym and
+order-vs-snatch, none of which the backfill has. Those 28 backfill rows are
+marked `superseded` and kept, never deleted.
+
+Supersession is computed per `(date, discipline)`, never per date window. The
+backfill holds August dates the workbook never covered — snatch on the 2nd,
+4th, 10th, 21st, 24th and 25th; hypertrophy on the 10th; calisthenics across
+the 22nd to the 28th. A window rule would have buried all of them.
+
+```sql
+-- 1. stage
+\i supabase/migrations/0003_backfill_staging.sql
+-- 2. install the review surface and the promotion function (promotes nothing)
+\i supabase/migrations/0004_promote.sql
+-- 3. review
+select * from fitness.import_preview;
+select * from fitness.import_conflicts;
+select * from fitness.import_superseded;
+-- 4. dry run, then commit
+select * from fitness.promote_imports();
+select * from fitness.promote_imports(true);
+```
+
+Expected after promoting — check the run against these:
+
+| Target | Rows |
+| --- | --- |
+| sessions | 79 |
+| session_blocks | 110 |
+| snatch_blocks | 214 |
+| hypertrophy_sets | 73 (67 + 6 drop sets) |
+| calisthenics_entries | 29 |
+| injury_observations | 7 |
+| daily_metrics | 88 |
+
+13 nutrition rows stay `pending_review` on purpose: nutrition is a later
+category and has no target table yet. They are staged so nothing is lost.
+
+Promotion is idempotent — every target row carries `source_record_id` and
+nothing is inserted twice, so a re-run is a no-op. Rows whose exercise or skill
+cannot be resolved are left pending and reported rather than silently dropped.
+Known conflicts (5 May, 17 May, 11 Aug) are flagged, not reconciled.
+
+Regenerate the staging SQL with:
+
+```bash
+python scripts/build_backfill_sql.py <backfill.jsonl> <workbook.xlsx> supabase/migrations/0003_backfill_staging.sql
+```
+
+The generator refuses to run if any source value has no mapping, rather than
+guessing one.
 
 ## Access model
 
