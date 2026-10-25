@@ -298,6 +298,68 @@ export async function getHistory(): Promise<HistoryData> {
   };
 }
 
+export interface DayDetail {
+  date: string;
+  day: DayRecord | null;
+  sessions: Session[];
+  /** Counts per session, so an empty one can be offered for deletion. */
+  loggedCounts: Record<string, number>;
+  metricDefs: DailyMetricDef[];
+  metrics: DailyMetric[];
+  error: string | null;
+}
+
+/** Everything attached to one calendar day, for the day editor. */
+export async function getDayDetail(date: string): Promise<DayDetail> {
+  const [dayResult, sessionResult, defsResult, metricsResult] = await Promise.all([
+    safeRead<DayRecord[]>((c) => c.from("days").select("*").eq("day", date).limit(1)),
+    safeRead<Session[]>((c) =>
+      c.from("sessions").select("*").eq("session_date", date).order("created_at"),
+    ),
+    safeRead<DailyMetricDef[]>((c) =>
+      c.from("daily_metric_defs").select("*").eq("is_active", true).order("sort_order"),
+    ),
+    safeRead<DailyMetric[]>((c) =>
+      c
+        .from("daily_metrics")
+        .select("metric, value_numeric, value_text")
+        .eq("metric_date", date)
+        .eq("provenance", "logged"),
+    ),
+  ]);
+
+  const sessions = sessionResult.data ?? [];
+  const ids = sessions.map((s) => s.id);
+  const loggedCounts: Record<string, number> = Object.fromEntries(ids.map((id) => [id, 0]));
+
+  if (ids.length) {
+    const [snatch, hypertrophy, calisthenics] = await Promise.all([
+      safeRead<{ session_id: string }[]>((c) =>
+        c.from("snatch_blocks").select("session_id").in("session_id", ids),
+      ),
+      safeRead<{ session_id: string }[]>((c) =>
+        c.from("hypertrophy_sets").select("session_id").in("session_id", ids),
+      ),
+      safeRead<{ session_id: string }[]>((c) =>
+        c.from("calisthenics_entries").select("session_id").in("session_id", ids),
+      ),
+    ]);
+    for (const row of [...(snatch.data ?? []), ...(hypertrophy.data ?? []), ...(calisthenics.data ?? [])]) {
+      loggedCounts[row.session_id] = (loggedCounts[row.session_id] ?? 0) + 1;
+    }
+  }
+
+  return {
+    date,
+    day: dayResult.data?.[0] ?? null,
+    sessions,
+    loggedCounts,
+    metricDefs: defsResult.data ?? [],
+    metrics: metricsResult.data ?? [],
+    error: sessionResult.error ?? defsResult.error,
+  };
+}
+
 export async function getSnatchSuccessByWeight() {
   return safeRead<SnatchSuccessByWeight[]>((c) =>
     c.from("v_snatch_success_by_weight").select("*").order("weight_kg"),

@@ -56,6 +56,10 @@ const Actions = z.discriminatedUnion("action", [
       .max(40),
   }),
   z.object({
+    action: z.literal("delete_session"),
+    session_id: uuid,
+  }),
+  z.object({
     action: z.literal("add_block"),
     session_id: uuid,
     workstream: z.enum(["snatch", "calisthenics", "hypertrophy"]),
@@ -312,6 +316,61 @@ export async function POST(request: Request) {
           .eq("provenance", "logged");
         if (error) throw error;
         return NextResponse.json({ metrics: data });
+      }
+
+      case "delete_session": {
+        // Refuses when training is logged against it. Changing your mind about
+        // a session you never used is routine; discarding recorded lifts is
+        // not, and should not happen by tapping the wrong thing.
+        const counts = await Promise.all(
+          (["snatch_blocks", "hypertrophy_sets", "calisthenics_entries"] as const).map((table) =>
+            db
+              .from(table)
+              .select("id", { count: "exact", head: true })
+              .eq("session_id", input.session_id),
+          ),
+        );
+        const failed = counts.find((c) => c.error);
+        if (failed?.error) throw failed.error;
+        const logged = counts.reduce((total, c) => total + (c.count ?? 0), 0);
+        if (logged > 0) {
+          return NextResponse.json(
+            {
+              error: `That session has ${logged} record${logged === 1 ? "" : "s"} logged against it. Delete those first.`,
+            },
+            { status: 409 },
+          );
+        }
+
+        const { data: session, error: findError } = await db
+          .from("sessions")
+          .select("session_date")
+          .eq("id", input.session_id)
+          .maybeSingle();
+        if (findError) throw findError;
+
+        const { error } = await db.from("sessions").delete().eq("id", input.session_id);
+        if (error) throw error;
+
+        // The day was marked trained when the session was created. With no
+        // sessions left it is unlogged again - not rest, which is a claim only
+        // you can make.
+        if (session) {
+          const { count, error: remainingError } = await db
+            .from("sessions")
+            .select("id", { count: "exact", head: true })
+            .eq("session_date", session.session_date);
+          if (remainingError) throw remainingError;
+          if ((count ?? 0) === 0) {
+            const { error: dayError } = await db
+              .from("days")
+              .update({ status: "unlogged" })
+              .eq("day", session.session_date)
+              .eq("status", "trained");
+            if (dayError) throw dayError;
+          }
+        }
+        return NextResponse.json({ deleted: input.session_id });
       }
 
       case "add_block": {

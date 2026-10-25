@@ -14,11 +14,12 @@ standing in a gym, one-handed, between sets.
 | 1 | Schema, session model, snatch logging | **done** |
 | 2 | Hypertrophy logging | not started |
 | 2a | Daily check-in, quick mode | **done** |
+| 2b | Day editor: any past day, rest days, reasons | **done** |
 | 3 | Calisthenics logging with configurable success criteria | not started |
 | 4 | Injuries | not started |
 | 5 | Weekly report and charts | not started |
 
-Backfill import: **staged and ready, not yet run.** See below.
+Backfill import: **run.** 401 rows staged, 373 promoted into 79 sessions. See below.
 
 ## Setup
 

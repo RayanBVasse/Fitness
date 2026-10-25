@@ -5,15 +5,8 @@ import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { SnatchLogger } from "@/components/today/SnatchLogger";
 import { DailyCheckIn } from "@/components/today/DailyCheckIn";
-import { Card, Empty, Pill, SectionTitle, Stat } from "@/components/ui";
-import {
-  formatDuration,
-  londonTime,
-  longDate,
-  minutesBetween,
-  weekdayName,
-  daysBetween,
-} from "@/lib/time";
+import { Card, Empty, Pill, SectionTitle } from "@/components/ui";
+import { londonTime, longDate, weekdayName, daysBetween } from "@/lib/time";
 import {
   WORKSTREAM_LABELS,
   type FailureMode,
@@ -96,12 +89,6 @@ export function TodayScreen({
   const sessionSnatchBlocks = snatchBlocks.filter((b) => b.session_id === session?.id);
 
   const snatchBlock = sessionBlocks.find((b) => b.workstream === "snatch") ?? null;
-  const sessionMinutes = session ? minutesBetween(session.started_at, session.ended_at) : null;
-  const elapsed =
-    session?.started_at && !session.ended_at
-      ? minutesBetween(session.started_at, new Date().toISOString())
-      : null;
-
   return (
     <div className="space-y-4 pt-5">
       {/* Date, day and gym are shown rather than asked for. */}
@@ -254,23 +241,42 @@ export function TodayScreen({
       ) : (
         <>
           <Card>
-            <div className="grid grid-cols-3 gap-3">
-              <Stat
-                label="Gym"
-                value={
-                  gyms.find((g) => g.id === session.gym_id)?.name ??
-                  session.gym_custom_label ??
-                  "—"
-                }
-              />
-              <Stat
-                label="Started"
-                value={session.started_at ? londonTime(session.started_at) : "—"}
-              />
-              <Stat
-                label={session.ended_at ? "Duration" : "Elapsed"}
-                value={formatDuration(sessionMinutes ?? elapsed)}
-              />
+            {/* No clocks. Session times were never actually recorded, and
+                showing them implied a precision that did not exist. */}
+            <div>
+              <div className="mb-1.5 text-[11px] uppercase tracking-wide text-text-faint">
+                Gym
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {gyms.map((gym) => {
+                  const on = session.gym_id === gym.id;
+                  return (
+                    <button
+                      key={gym.id}
+                      type="button"
+                      disabled={!canWrite || busy}
+                      onClick={() =>
+                        run(async () => {
+                          await write({
+                            action: "update_session",
+                            session_id: session.id,
+                            gym_id: on ? null : gym.id,
+                          });
+                        })
+                      }
+                      aria-pressed={on}
+                      className="min-h-[44px] rounded-[var(--radius)] border px-2 text-sm font-semibold disabled:opacity-40"
+                      style={{
+                        borderColor: on ? "var(--accent)" : "var(--border)",
+                        color: on ? "var(--accent)" : "var(--text-dim)",
+                        background: on ? "var(--surface-2)" : "transparent",
+                      }}
+                    >
+                      {gym.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {sessions.length > 1 ? (
@@ -299,10 +305,6 @@ export function TodayScreen({
               <div className="flex flex-wrap gap-2">
                 {WORKSTREAMS.map((workstream) => {
                   const existing = sessionBlocks.find((b) => b.workstream === workstream);
-                  const minutes = existing
-                    ? (existing.duration_minutes ??
-                      minutesBetween(existing.started_at, existing.ended_at))
-                    : null;
                   return (
                     <button
                       key={workstream}
@@ -326,15 +328,12 @@ export function TodayScreen({
                     >
                       {existing ? "" : "+ "}
                       {WORKSTREAM_LABELS[workstream]}
-                      {minutes !== null ? (
-                        <span className="tnum ml-1 font-normal">{minutes} min</span>
-                      ) : null}
                     </button>
                   );
                 })}
               </div>
               <p className="mt-2 text-[11px] text-text-faint">
-                One visit, several disciplines. Each keeps its own clock.
+                One visit, several disciplines.
               </p>
             </div>
 

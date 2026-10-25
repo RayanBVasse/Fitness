@@ -97,7 +97,7 @@ export function DailyCheckIn({ date, defs, saved, canWrite }: Props) {
             Daily check-in
           </span>
           <span className="tnum text-sm text-text-faint">
-            {recorded > 0 ? `${recorded} recorded today` : "Not recorded yet"}
+            {recorded > 0 ? `${recorded} recorded` : "Nothing recorded"}
           </span>
         </span>
         <span

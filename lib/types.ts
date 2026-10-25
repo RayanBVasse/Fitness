@@ -29,6 +29,8 @@ export interface DailyMetricDef {
   in_quick_mode: boolean;
   help: string | null;
   sort_order: number;
+  /** Quick chips for a text dimension; empty for most. */
+  suggested_values: string[];
 }
 
 export interface DailyMetric {

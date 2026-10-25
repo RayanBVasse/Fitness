@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card } from "@/components/ui";
 import { longDate, weekdayName } from "@/lib/time";
 import { WORKSTREAM_LABELS } from "@/lib/types";
@@ -89,8 +90,11 @@ export function HistoryList({ sessions, restDays, reconstructedCount }: Props) {
                 const load = byDay.get(day);
                 const isRest = load === undefined && rested.has(`${key}-${pad(day)}`);
                 return (
-                  <div
+                  // Every day is reachable, including ones with nothing on
+                  // them: an unrecorded rest day has no row anywhere else.
+                  <Link
                     key={day}
+                    href={`/day/${key}-${pad(day)}`}
                     title={`${day} ${label} — ${isRest ? "rest day (recorded)" : describeDay(load)}`}
                     className="flex h-5 flex-1 items-center justify-center rounded-[2px]"
                     style={{ background: stepFor(load) }}
@@ -104,7 +108,7 @@ export function HistoryList({ sessions, restDays, reconstructedCount }: Props) {
                         style={{ background: "var(--text-faint)" }}
                       />
                     ) : null}
-                  </div>
+                  </Link>
                 );
               })}
             </div>
@@ -141,7 +145,8 @@ function SessionRow({ session }: { session: SessionDigest }) {
   const headline = headlineFor(session);
   const detail = detailFor(session);
   return (
-    <li className="flex items-center gap-3 py-2.5">
+    <li className="py-2.5">
+      <Link href={`/day/${session.date}`} className="flex items-center gap-3">
       <div className="w-9 shrink-0 text-center">
         <div className="text-[10px] uppercase tracking-wide text-text-faint">
           {weekdayName(session.date).slice(0, 3)}
@@ -169,6 +174,7 @@ function SessionRow({ session }: { session: SessionDigest }) {
         <div className="tnum text-base font-semibold leading-none">{headline.value}</div>
         <div className="text-[10px] text-text-faint">{headline.label}</div>
       </div>
+      </Link>
     </li>
   );
 }
