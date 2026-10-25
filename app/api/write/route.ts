@@ -95,6 +95,12 @@ const Actions = z.discriminatedUnion("action", [
     entry_id: uuid,
   }),
   z.object({
+    action: z.literal("set_note_review"),
+    note_ids: z.array(uuid).min(1).max(200),
+    review_status: z.enum(["pending", "approved", "rejected"]),
+    review_note: z.string().max(1000).nullable().optional(),
+  }),
+  z.object({
     action: z.literal("delete_session"),
     session_id: uuid,
     /** Set only after the user confirmed a count they were shown. */
@@ -445,6 +451,23 @@ export async function POST(request: Request) {
           .eq("id", input.entry_id);
         if (error) throw error;
         return NextResponse.json({ deleted: input.entry_id });
+      }
+
+      case "set_note_review": {
+        // Approval is the consent gate: the Coach can read approved notes and
+        // nothing else, so this is the only thing standing between a private
+        // journal and a model.
+        const { data, error } = await db
+          .from("context_notes")
+          .update({
+            review_status: input.review_status,
+            reviewed_at: input.review_status === "pending" ? null : new Date().toISOString(),
+            review_note: input.review_note ?? null,
+          })
+          .in("id", input.note_ids)
+          .select("id");
+        if (error) throw error;
+        return NextResponse.json({ updated: data?.length ?? 0 });
       }
 
       case "delete_session": {

@@ -88,6 +88,24 @@ export interface SnatchTag {
   is_active: boolean;
 }
 
+export type NoteReviewStatus = "pending" | "approved" | "rejected";
+
+export interface ContextNote {
+  id: string;
+  external_source_id: string;
+  note_type: string;
+  category: string;
+  content: string;
+  anchor_date: string | null;
+  period_label: string | null;
+  evidence_status: string;
+  sensitivity: string;
+  candidate_numeric: boolean;
+  tags: string[];
+  review_status: NoteReviewStatus;
+  linked_session_id: string | null;
+}
+
 export interface MuscleGroup {
   id: number;
   slug: string;

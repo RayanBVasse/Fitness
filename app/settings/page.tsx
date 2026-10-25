@@ -2,6 +2,7 @@ import { safeRead } from "@/lib/supabase";
 import { getReferenceData } from "@/lib/queries";
 import { SetupNotice } from "@/components/SetupNotice";
 import { Card, Pill, SectionTitle } from "@/components/ui";
+import Link from "next/link";
 import { SignOutButton } from "@/components/SignOutButton";
 
 export const dynamic = "force-dynamic";
@@ -76,6 +77,20 @@ export default async function SettingsPage() {
           </pre>
         </Card>
       ) : null}
+
+      <Card>
+        <SectionTitle>Context notes</SectionTitle>
+        <p className="text-sm text-text-dim">
+          Narrative notes recovered from earlier conversations. The Coach reads approved ones
+          only, so reviewing them is what makes it able to quote your own words back.
+        </p>
+        <Link
+          href="/notes"
+          className="mt-3 flex min-h-[44px] items-center justify-center rounded-[var(--radius)] border border-border text-sm font-semibold"
+        >
+          Review notes
+        </Link>
+      </Card>
 
       <Card>
         <SectionTitle>Access</SectionTitle>

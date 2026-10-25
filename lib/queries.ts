@@ -8,6 +8,7 @@ import type {
   HypertrophySet,
   LastExerciseSetting,
   LastSkillSetting,
+  ContextNote,
   MuscleGroup,
   Skill,
   SkillVariation,
@@ -389,6 +390,58 @@ function dedupeByMetric<T extends { metric: string }>(rows: T[]): T[] {
     seen.add(row.metric);
     return true;
   });
+}
+
+export interface NotesData {
+  notes: ContextNote[];
+  counts: { pending: number; approved: number; rejected: number };
+  months: string[];
+  noteTypes: string[];
+  error: string | null;
+}
+
+/**
+ * The review queue. Notes stay invisible to the Coach until approved, so this
+ * is the consent gate rather than a tidying exercise.
+ */
+export async function getContextNotes(filters: {
+  status?: string;
+  month?: string;
+  noteType?: string;
+}): Promise<NotesData> {
+  const [listResult, allResult] = await Promise.all([
+    safeRead<ContextNote[]>((c) => {
+      let q = c
+        .from("context_notes")
+        .select(
+          "id, external_source_id, note_type, category, content, anchor_date, period_label, evidence_status, sensitivity, candidate_numeric, tags, review_status, linked_session_id",
+        )
+        .order("anchor_date", { ascending: false, nullsFirst: false })
+        .limit(200);
+      if (filters.status && filters.status !== "all") q = q.eq("review_status", filters.status);
+      if (filters.noteType) q = q.eq("note_type", filters.noteType);
+      if (filters.month) {
+        q = q.gte("anchor_date", `${filters.month}-01`).lte("anchor_date", `${filters.month}-31`);
+      }
+      return q;
+    }),
+    safeRead<{ review_status: string; note_type: string; anchor_date: string | null }[]>((c) =>
+      c.from("context_notes").select("review_status, note_type, anchor_date"),
+    ),
+  ]);
+
+  const all = allResult.data ?? [];
+  return {
+    notes: listResult.data ?? [],
+    counts: {
+      pending: all.filter((n) => n.review_status === "pending").length,
+      approved: all.filter((n) => n.review_status === "approved").length,
+      rejected: all.filter((n) => n.review_status === "rejected").length,
+    },
+    months: [...new Set(all.map((n) => n.anchor_date?.slice(0, 7)).filter(Boolean) as string[])].sort().reverse(),
+    noteTypes: [...new Set(all.map((n) => n.note_type))].sort(),
+    error: listResult.error ?? allResult.error,
+  };
 }
 
 export interface DayDetail {

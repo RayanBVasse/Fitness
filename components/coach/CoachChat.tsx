@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { Card, Pill } from "@/components/ui";
 
 /**
@@ -97,6 +98,13 @@ export function CoachChat({ conversationId }: { conversationId: string }) {
               </button>
             ))}
           </div>
+          <p className="mt-3 text-[11px] leading-snug text-text-faint">
+            It can only quote notes you have approved.{" "}
+            <Link href="/notes" className="underline underline-offset-2">
+              Review them
+            </Link>{" "}
+            to let it use your own words.
+          </p>
         </Card>
       ) : null}
 
