@@ -18,6 +18,7 @@ standing in a gym, one-handed, between sets.
 | 3 | Calisthenics logging with configurable success criteria | **done** |
 | 4 | Injuries | not started |
 | 5 | Weekly report and charts | not started |
+| 6 | Observatory Coach | designed, not built — see [docs/coach-design.md](docs/coach-design.md) |
 
 Backfill import: **run.** 401 rows staged, 373 promoted into 79 sessions. See below.
 
