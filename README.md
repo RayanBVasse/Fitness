@@ -111,17 +111,35 @@ guessing one.
 
 ## Access model
 
-The site is **public and readable** by anyone with the link. RLS grants `anon`
-`SELECT` and nothing else, so a visitor can look but cannot change anything.
+**The app is private.** Every page and every write requires a session.
 
-Every mutation goes through `POST /api/write`, which checks a passcode and then
-executes with the service-role key server-side. The passcode is entered once
-per device and lives in that browser's `localStorage`; it is never bundled.
+Migration `0005_private.sql` revoked all anonymous grants on the `fitness`
+schema, so the data is unreadable over the Supabase REST API as well as through
+the site. That ordering matters: the anon key ships in any browser bundle, so
+locking only the front end would have left the database open.
 
-Writes fail closed: no passcode configured → `503`; wrong passcode → `401`;
-malformed payload → `422`. Staging tables (`import_records`, `import_batches`)
-are not readable by `anon` at all — they hold unreviewed rows with known
-conflicts in them.
+Authentication is a passcode exchanged for a signed, HttpOnly, SameSite=Lax
+cookie (90 days). `middleware.ts` gates every route, so a new page is private by
+default rather than by remembering to protect it, and it **fails closed** — if
+`AUTH_SECRET` or the passcode is missing, nothing is served at all.
+
+Reads and writes both run server-side with the service-role key. No database
+credential reaches the browser.
+
+| Variable | Where | Purpose |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | public | Project URL; opens nothing on its own |
+| `SUPABASE_SERVICE_ROLE_KEY` | server only | The only database credential |
+| `AUTH_SECRET` | server only | Signs the session cookie; changing it signs out every device |
+| `FITNESS_WRITE_PASSCODE` | server only | The passcode that unlocks the app |
+
+Login is rate-limited to 8 attempts per 10 minutes per IP, compared in constant
+time, and the failure message does not distinguish causes. Signing out performs
+a full document load so cached payloads do not survive it.
+
+Supabase Auth would be the next step if a second person ever needs access — a
+physio reading the knee history, say — or if per-device revocation matters. The
+policies would be rewritten against `auth.uid()` and this gate replaced.
 
 ## Data model decisions
 

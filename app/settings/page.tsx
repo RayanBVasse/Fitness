@@ -2,6 +2,7 @@ import { safeRead } from "@/lib/supabase";
 import { getReferenceData } from "@/lib/queries";
 import { SetupNotice } from "@/components/SetupNotice";
 import { Card, Pill, SectionTitle } from "@/components/ui";
+import { SignOutButton } from "@/components/SignOutButton";
 
 export const dynamic = "force-dynamic";
 
@@ -77,12 +78,16 @@ export default async function SettingsPage() {
       ) : null}
 
       <Card>
-        <SectionTitle>Write access</SectionTitle>
+        <SectionTitle>Access</SectionTitle>
         <p className="text-sm text-text-dim">
-          This site is public and readable by anyone with the link. Logging requires the passcode,
-          entered once per device on the Today screen. All writes run server-side; the service-role
-          key is never sent to the browser.
+          This app is private. Every page and every write requires a session, held in an
+          HttpOnly cookie that JavaScript cannot read. The database grants nothing to anonymous
+          callers, so the data is unreadable over the API as well as through the site. All queries
+          run server-side; no key reaches the browser.
         </p>
+        <div className="mt-3">
+          <SignOutButton />
+        </div>
       </Card>
     </div>
   );

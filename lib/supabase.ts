@@ -1,18 +1,20 @@
 import { createClient } from "@supabase/supabase-js";
 
 /**
- * Two clients, deliberately separated.
+ * One credential, server-side only.
  *
- * readClient  — the anon key. Browser-safe only because RLS grants SELECT and
- *               nothing else. Used for every read.
- * adminClient — the service-role key. Server-only, bypasses RLS, and is the
- *               single write path. Never import this into a client component.
+ * Migration 0005 revoked every anon grant on the `fitness` schema, so the anon
+ * key now opens nothing and no client-side read is possible. Reads and writes
+ * both run with the service-role key, inside server components and route
+ * handlers that the middleware has already authenticated.
+ *
+ * Nothing in this file may be imported from a client component.
  */
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-export const isConfigured = Boolean(url && anonKey);
+export const isConfigured = Boolean(url && serviceKey);
 
 /**
  * Both clients are scoped to the `fitness` schema, which changes the client's
@@ -31,23 +33,17 @@ export type FitnessClient = ReturnType<typeof create>;
 let read: FitnessClient | null = null;
 
 export function readClient(): FitnessClient {
-  if (!url || !anonKey) {
+  if (!url || !serviceKey) {
     throw new Error(
-      "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+      "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
     );
   }
-  read ??= create(url, anonKey);
+  read ??= create(url, serviceKey);
   return read;
 }
 
 export function adminClient(): FitnessClient {
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) {
-    throw new Error(
-      "Write path is not configured. Set SUPABASE_SERVICE_ROLE_KEY in the server environment.",
-    );
-  }
-  return create(url, serviceKey);
+  return readClient();
 }
 
 /**

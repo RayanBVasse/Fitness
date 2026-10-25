@@ -6,11 +6,13 @@ import { londonToday } from "@/lib/time";
 /**
  * The single write path.
  *
- * The site is public and read-only to the world: RLS grants anon SELECT and
- * nothing else. Every mutation arrives here, is gated on a passcode, and is
- * executed with the service-role key, which never leaves the server.
+ * The app is private: the middleware rejects any unauthenticated request to
+ * /api/* before it reaches this handler, so there is no passcode check here —
+ * holding a valid session is the authorisation. Mutations execute with the
+ * service-role key, which never leaves the server.
  *
- * One endpoint rather than a dozen so the gate exists in exactly one place.
+ * One endpoint rather than a dozen, so the shape of a write is defined in
+ * exactly one place.
  */
 
 const uuid = z.string().uuid();
@@ -82,10 +84,6 @@ const Actions = z.discriminatedUnion("action", [
   }),
 ]);
 
-function unauthorized() {
-  return NextResponse.json({ error: "Not authorised" }, { status: 401 });
-}
-
 /**
  * Drops keys the caller did not send, so a partial update never overwrites a
  * stored value with null just because the field was absent from the payload.
@@ -97,15 +95,6 @@ function patch<T extends Record<string, unknown>>(fields: T): Partial<T> {
 }
 
 export async function POST(request: Request) {
-  const expected = process.env.FITNESS_WRITE_PASSCODE;
-  if (!expected) {
-    return NextResponse.json(
-      { error: "Writes are disabled: FITNESS_WRITE_PASSCODE is not set." },
-      { status: 503 },
-    );
-  }
-  if (request.headers.get("x-fitness-passcode") !== expected) return unauthorized();
-
   let body: unknown;
   try {
     body = await request.json();

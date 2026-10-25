@@ -37,10 +37,10 @@ export function SetupNotice({ error }: { error: string | null }) {
           <span className="font-semibold">3. Set the environment variables.</span>
           <div className="text-text-dim">
             <code className="rounded bg-surface-2 px-1">NEXT_PUBLIC_SUPABASE_URL</code>,{" "}
-            <code className="rounded bg-surface-2 px-1">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>,{" "}
-            <code className="rounded bg-surface-2 px-1">SUPABASE_SERVICE_ROLE_KEY</code> and{" "}
-            <code className="rounded bg-surface-2 px-1">FITNESS_WRITE_PASSCODE</code>. The last two
-            are server-only and must never be prefixed with NEXT_PUBLIC.
+            <code className="rounded bg-surface-2 px-1">SUPABASE_SERVICE_ROLE_KEY</code>,{" "}
+            <code className="rounded bg-surface-2 px-1">AUTH_SECRET</code> and{" "}
+            <code className="rounded bg-surface-2 px-1">FITNESS_WRITE_PASSCODE</code>. All but the
+            first are server-only and must never be prefixed with NEXT_PUBLIC.
           </div>
         </li>
       </ol>

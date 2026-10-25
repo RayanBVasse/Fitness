@@ -13,6 +13,10 @@ const DESTINATIONS = [
 export function BottomNav() {
   const pathname = usePathname();
 
+  // Nothing to navigate to before signing in: every destination would bounce
+  // straight back here. Checked on the client so /login stays static.
+  if (pathname === "/login") return null;
+
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface/95 backdrop-blur"

@@ -2,8 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { usePasscode, write } from "@/lib/write";
-import { PasscodeGate } from "@/components/PasscodeGate";
+import { write } from "@/lib/write";
 import { SnatchLogger } from "@/components/today/SnatchLogger";
 import { Card, Empty, Pill, SectionTitle, Stat } from "@/components/ui";
 import {
@@ -59,9 +58,9 @@ export function TodayScreen({
   objective,
 }: Props) {
   const router = useRouter();
-  // Both this screen and the gate read the same external store, so unlocking
-  // enables the controls without any state being copied around.
-  const canWrite = Boolean(usePasscode());
+  // Reaching this screen at all means the middleware accepted a session, so
+  // there is nothing further to check before allowing a write.
+  const canWrite = true;
   const [gymId, setGymId] = useState<number | null>(null);
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -94,8 +93,6 @@ export function TodayScreen({
         </div>
         <h1 className="text-2xl font-bold leading-tight">{longDate(date)}</h1>
       </header>
-
-      <PasscodeGate />
 
       {objective ? (
         <Card className="!p-3">
@@ -263,11 +260,6 @@ export function TodayScreen({
               </p>
             </div>
 
-            {!canWrite ? (
-              <p className="mt-3 text-[11px] text-text-faint">
-                Read-only. Enter the passcode above to log.
-              </p>
-            ) : null}
           </Card>
 
           <Card>
