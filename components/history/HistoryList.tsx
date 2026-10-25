@@ -27,12 +27,15 @@ const CONTESTED_KG = 50;
 
 type Props = {
   sessions: SessionDigest[];
+  /** Dates explicitly marked as rest, as opposed to simply never logged. */
+  restDays: string[];
   reconstructedCount: number;
   heavyThresholdKg?: number | null;
 };
 
-export function HistoryList({ sessions, reconstructedCount }: Props) {
+export function HistoryList({ sessions, restDays, reconstructedCount }: Props) {
   const months = groupByMonth(sessions);
+  const rested = new Set(restDays);
   const first = sessions.at(-1);
   const last = sessions.at(0);
 
@@ -56,6 +59,7 @@ export function HistoryList({ sessions, reconstructedCount }: Props) {
       ) : null}
 
       {months.map(({ key, label, days, entries }) => {
+        const monthRest = [...rested].filter((d) => d.startsWith(key)).length;
         const monthHeaviest = maxOf(entries.map((s) => s.heaviestStoodKg));
         const monthAttempts = sum(entries.map((s) => s.snatchAttempts));
         const monthStood = sum(entries.map((s) => s.snatchStood));
@@ -73,6 +77,7 @@ export function HistoryList({ sessions, reconstructedCount }: Props) {
               <h2 className="text-sm font-bold">{label}</h2>
               <div className="tnum text-[11px] text-text-faint">
                 {entries.length} session{entries.length === 1 ? "" : "s"}
+                {monthRest > 0 ? ` · ${monthRest} rest` : ""}
                 {monthHeaviest !== null ? ` · best ${trim(monthHeaviest)} kg` : ""}
                 {monthAttempts > 0 ? ` · ${monthStood}/${monthAttempts} stood` : ""}
               </div>
@@ -82,13 +87,24 @@ export function HistoryList({ sessions, reconstructedCount }: Props) {
             <div className="flex gap-[2px]" role="img" aria-label={`Training days in ${label}`}>
               {Array.from({ length: days }, (_, i) => i + 1).map((day) => {
                 const load = byDay.get(day);
+                const isRest = load === undefined && rested.has(`${key}-${pad(day)}`);
                 return (
                   <div
                     key={day}
-                    title={`${day} ${label} — ${describeDay(load)}`}
-                    className="h-5 flex-1 rounded-[2px]"
+                    title={`${day} ${label} — ${isRest ? "rest day (recorded)" : describeDay(load)}`}
+                    className="flex h-5 flex-1 items-center justify-center rounded-[2px]"
                     style={{ background: stepFor(load) }}
-                  />
+                  >
+                    {/* A recorded rest day is marked, not coloured: an unlogged
+                        day and a rest day must not look like the same thing. */}
+                    {isRest ? (
+                      <span
+                        aria-hidden
+                        className="block h-[2px] w-1/2 rounded-full"
+                        style={{ background: "var(--text-faint)" }}
+                      />
+                    ) : null}
+                  </div>
                 );
               })}
             </div>
@@ -96,7 +112,17 @@ export function HistoryList({ sessions, reconstructedCount }: Props) {
               <LegendSwatch background={stepFor(CONTESTED_KG)} label={`${trim(CONTESTED_KG)} kg+`} />
               <LegendSwatch background={stepFor(WORKING_KG)} label={`${trim(WORKING_KG)} kg`} />
               <LegendSwatch background={stepFor(1)} label="lighter" />
-              <LegendSwatch background={stepFor(undefined)} label="rest" />
+              <LegendSwatch background={stepFor(undefined)} label="not logged" />
+              <span className="inline-flex items-center gap-1">
+                <span
+                  aria-hidden
+                  className="flex h-2 w-2 items-center justify-center rounded-[2px]"
+                  style={{ background: stepFor(undefined) }}
+                >
+                  <span className="block h-[1px] w-1/2" style={{ background: "var(--text-faint)" }} />
+                </span>
+                rest
+              </span>
             </div>
 
             <ul className="mt-3 divide-y divide-border">
@@ -259,6 +285,10 @@ function sum(values: number[]): number {
 function maxOf(values: (number | null)[]): number | null {
   const present = values.filter((v): v is number => v !== null);
   return present.length ? Math.max(...present) : null;
+}
+
+function pad(day: number): string {
+  return String(day).padStart(2, "0");
 }
 
 function trim(value: number): string {

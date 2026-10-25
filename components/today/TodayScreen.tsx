@@ -22,6 +22,7 @@ import {
   type SessionSummary,
   type SnatchBlock,
   type SnatchObjective,
+  type DayRecord,
   type SnatchVariation,
   type WarmupLadder,
   type WeightPreset,
@@ -30,6 +31,7 @@ import {
 
 type Props = {
   date: string;
+  day: DayRecord | null;
   session: Session | null;
   blocks: SessionBlock[];
   snatchBlocks: SnatchBlock[];
@@ -46,6 +48,7 @@ const WORKSTREAMS: Workstream[] = ["snatch", "calisthenics", "hypertrophy"];
 
 export function TodayScreen({
   date,
+  day,
   session,
   blocks,
   snatchBlocks,
@@ -110,7 +113,27 @@ export function TodayScreen({
         </Card>
       ) : null}
 
-      {!session ? (
+      {!session && day?.status === "rest" ? (
+        <Card>
+          <SectionTitle>Rest day</SectionTitle>
+          <p className="text-sm text-text-dim">
+            Recorded as rest. That is a fact about today, not a gap in the record — it counts
+            towards recovery intervals and training frequency.
+          </p>
+          <button
+            type="button"
+            disabled={!canWrite || busy}
+            onClick={() =>
+              run(async () => {
+                await write({ action: "set_day_status", date, status: "unlogged" });
+              })
+            }
+            className="mt-3 min-h-[44px] w-full rounded-[var(--radius)] border border-border text-sm font-semibold disabled:opacity-40"
+          >
+            Undo rest day
+          </button>
+        </Card>
+      ) : !session ? (
         <Card>
           <SectionTitle>No session today</SectionTitle>
           <div className="space-y-3">
@@ -192,6 +215,21 @@ export function TodayScreen({
                 </span>
               </button>
             ) : null}
+
+            {/* A rest day is data. Marking it is what makes "days since last
+                heavy session" and "consecutive training days" trustworthy. */}
+            <button
+              type="button"
+              disabled={!canWrite || busy}
+              onClick={() =>
+                run(async () => {
+                  await write({ action: "set_day_status", date, status: "rest" });
+                })
+              }
+              className="min-h-[44px] w-full rounded-[var(--radius)] border border-dashed border-border text-sm font-semibold text-text-dim disabled:opacity-40"
+            >
+              Mark today as a rest day
+            </button>
           </div>
         </Card>
       ) : (

@@ -10,6 +10,19 @@ export type Workstream = "snatch" | "calisthenics" | "hypertrophy";
 export type SnatchOutcome = "stood" | "received_not_stood" | "missed" | "aborted";
 
 export type Provenance = "logged" | "workbook_import" | "historical_reconstruction";
+
+/**
+ * A day is not a session. `unlogged` is a row that exists to carry notes while
+ * asserting nothing about training; the absence of a row asserts nothing at all.
+ */
+export type DayStatus = "trained" | "rest" | "unlogged";
+
+export interface DayRecord {
+  day: string;
+  status: DayStatus;
+  notes: string | null;
+  provenance: Provenance;
+}
 export type RecordPrecision = "attempt" | "block" | "qualitative";
 
 export interface Gym {

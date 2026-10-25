@@ -1,6 +1,7 @@
 import { safeRead } from "./supabase";
 import { londonToday } from "./time";
 import type {
+  DayRecord,
   FailureMode,
   Gym,
   Provenance,
@@ -24,6 +25,9 @@ import type {
  */
 
 export interface TodayData {
+  /** Null when today has no row at all, which means nothing has been said
+   *  about it — distinct from a row saying it was a rest day. */
+  day: DayRecord | null;
   session: Session | null;
   blocks: SessionBlock[];
   snatchBlocks: SnatchBlock[];
@@ -78,6 +82,11 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
 
   const session = sessionResult.data?.[0] ?? null;
 
+  const dayResult = await safeRead<DayRecord[]>((c) =>
+    c.from("days").select("*").eq("day", date).limit(1),
+  );
+  const day = dayResult.data?.[0] ?? null;
+
   const lastSessionResult = await safeRead<SessionSummary[]>((c) =>
     c
       .from("v_session_summary")
@@ -89,6 +98,7 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
 
   if (!session) {
     return {
+      day,
       session: null,
       blocks: [],
       snatchBlocks: [],
@@ -119,6 +129,7 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     : { data: [], error: null };
 
   return {
+    day,
     session,
     blocks: blocks.data ?? [],
     snatchBlocks: snatchBlocks.data ?? [],
@@ -150,6 +161,9 @@ export interface SessionDigest {
 
 export interface HistoryData {
   sessions: SessionDigest[];
+  /** Dates explicitly marked as rest. A date absent from both this and the
+   *  session list was simply never logged, which is not the same thing. */
+  restDays: string[];
   reconstructedCount: number;
   error: string | null;
 }
@@ -161,7 +175,7 @@ export interface HistoryData {
  * a view would have to be migrated every time it does.
  */
 export async function getHistory(): Promise<HistoryData> {
-  const [sessions, snatch, hypertrophy, calisthenics] = await Promise.all([
+  const [sessions, snatch, hypertrophy, calisthenics, rest] = await Promise.all([
     safeRead<SessionSummary[]>((c) =>
       c.from("v_session_summary").select("*").order("session_date", { ascending: false }),
     ),
@@ -187,10 +201,13 @@ export async function getHistory(): Promise<HistoryData> {
     safeRead<{ session_id: string; best_hold_seconds: number | null }[]>((c) =>
       c.from("calisthenics_entries").select("session_id, best_hold_seconds"),
     ),
+    safeRead<{ day: string }[]>((c) =>
+      c.from("days").select("day").eq("status", "rest").order("day", { ascending: false }),
+    ),
   ]);
 
   const error = sessions.error ?? snatch.error ?? hypertrophy.error ?? calisthenics.error;
-  if (!sessions.data) return { sessions: [], reconstructedCount: 0, error };
+  if (!sessions.data) return { sessions: [], restDays: [], reconstructedCount: 0, error };
 
   const digests = new Map<string, SessionDigest>(
     sessions.data.map((s) => [
@@ -252,6 +269,7 @@ export async function getHistory(): Promise<HistoryData> {
   const list = [...digests.values()];
   return {
     sessions: list,
+    restDays: (rest.data ?? []).map((r) => r.day),
     reconstructedCount: list.filter((s) => s.provenance !== "logged").length,
     error,
   };

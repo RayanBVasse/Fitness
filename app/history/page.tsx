@@ -32,6 +32,7 @@ export default async function HistoryPage() {
   return (
     <HistoryList
       sessions={history.sessions}
+      restDays={history.restDays}
       reconstructedCount={history.reconstructedCount}
       heavyThresholdKg={reference.heavyThresholdKg}
     />

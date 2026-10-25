@@ -35,6 +35,12 @@ const Actions = z.discriminatedUnion("action", [
     notes: z.string().max(2000).nullable().optional(),
   }),
   z.object({
+    action: z.literal("set_day_status"),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    status: z.enum(["trained", "rest", "unlogged"]),
+    notes: z.string().max(2000).nullable().optional(),
+  }),
+  z.object({
     action: z.literal("add_block"),
     session_id: uuid,
     workstream: z.enum(["snatch", "calisthenics", "hypertrophy"]),
@@ -169,6 +175,41 @@ export async function POST(request: Request) {
           .single();
         if (error) throw error;
         return NextResponse.json({ session: data });
+      }
+
+      case "set_day_status": {
+        // A day with sessions on it is trained, whatever the request says;
+        // refusing here keeps the record honest rather than letting a stray
+        // tap overwrite what actually happened.
+        if (input.status === "rest") {
+          const { count, error } = await db
+            .from("sessions")
+            .select("id", { count: "exact", head: true })
+            .eq("session_date", input.date);
+          if (error) throw error;
+          if ((count ?? 0) > 0) {
+            return NextResponse.json(
+              { error: "That day already has training logged against it." },
+              { status: 409 },
+            );
+          }
+        }
+
+        const { data, error } = await db
+          .from("days")
+          .upsert(
+            {
+              day: input.date,
+              status: input.status,
+              notes: input.notes ?? null,
+              provenance: "logged",
+            },
+            { onConflict: "day" },
+          )
+          .select()
+          .single();
+        if (error) throw error;
+        return NextResponse.json({ day: data });
       }
 
       case "add_block": {

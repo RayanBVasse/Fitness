@@ -151,6 +151,13 @@ policies would be rewritten against `auth.uid()` and this gate replaced.
 These are deliberate and load-bearing. Changing them changes what the app can
 tell you.
 
+**A day is not a session.** `fitness.days` records what a calendar day was —
+trained, rested, or carrying notes without asserting either. Rest is data: a
+gap in the record means the day was never logged, which is a different fact.
+Rest days are never backfilled for historical gaps, because we do not know
+which they were. The day is also the anchor the journal will hang from, since
+sleep, readiness, bodyweight and symptoms belong to a day rather than a visit.
+
 **A gym visit is one session.** It contains N workstream blocks, each with its
 own editable start and end time. Three disciplines in one visit is one session,
 not three.

@@ -18,6 +18,7 @@ export default async function TodayPage() {
   return (
     <TodayScreen
       date={date}
+      day={today.day}
       session={today.session}
       blocks={today.blocks}
       snatchBlocks={today.snatchBlocks}
