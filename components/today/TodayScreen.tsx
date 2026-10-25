@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { SnatchLogger } from "@/components/today/SnatchLogger";
+import { DailyCheckIn } from "@/components/today/DailyCheckIn";
 import { Card, Empty, Pill, SectionTitle, Stat } from "@/components/ui";
 import {
   formatDuration,
@@ -22,6 +23,8 @@ import {
   type SessionSummary,
   type SnatchBlock,
   type SnatchObjective,
+  type DailyMetric,
+  type DailyMetricDef,
   type DayRecord,
   type SnatchVariation,
   type WarmupLadder,
@@ -32,6 +35,8 @@ import {
 type Props = {
   date: string;
   day: DayRecord | null;
+  metricDefs: DailyMetricDef[];
+  metrics: DailyMetric[];
   session: Session | null;
   blocks: SessionBlock[];
   snatchBlocks: SnatchBlock[];
@@ -49,6 +54,8 @@ const WORKSTREAMS: Workstream[] = ["snatch", "calisthenics", "hypertrophy"];
 export function TodayScreen({
   date,
   day,
+  metricDefs,
+  metrics,
   session,
   blocks,
   snatchBlocks,
@@ -110,6 +117,12 @@ export function TodayScreen({
             <Pill tone="stood">target {objective.primary_target_stand_rate_pct}%</Pill>
             <Pill tone="caught">{objective.secondary_load_kg} kg not yet stood</Pill>
           </div>
+        </Card>
+      ) : null}
+
+      {metricDefs.length > 0 ? (
+        <Card>
+          <DailyCheckIn date={date} defs={metricDefs} saved={metrics} canWrite={canWrite} />
         </Card>
       ) : null}
 

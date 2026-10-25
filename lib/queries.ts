@@ -1,6 +1,8 @@
 import { safeRead } from "./supabase";
 import { londonToday } from "./time";
 import type {
+  DailyMetric,
+  DailyMetricDef,
   DayRecord,
   FailureMode,
   Gym,
@@ -25,6 +27,10 @@ import type {
  */
 
 export interface TodayData {
+  /** The dimensions the check-in offers, defined as data in the database. */
+  metricDefs: DailyMetricDef[];
+  /** What has already been recorded for this day. */
+  metrics: DailyMetric[];
   /** Null when today has no row at all, which means nothing has been said
    *  about it — distinct from a row saying it was a rest day. */
   day: DayRecord | null;
@@ -87,6 +93,21 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
   );
   const day = dayResult.data?.[0] ?? null;
 
+  const [defsResult, metricsResult] = await Promise.all([
+    safeRead<DailyMetricDef[]>((c) =>
+      c.from("daily_metric_defs").select("*").eq("is_active", true).order("sort_order"),
+    ),
+    safeRead<DailyMetric[]>((c) =>
+      c
+        .from("daily_metrics")
+        .select("metric, value_numeric, value_text")
+        .eq("metric_date", date)
+        .eq("provenance", "logged"),
+    ),
+  ]);
+  const metricDefs = defsResult.data ?? [];
+  const metrics = metricsResult.data ?? [];
+
   const lastSessionResult = await safeRead<SessionSummary[]>((c) =>
     c
       .from("v_session_summary")
@@ -99,6 +120,8 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
   if (!session) {
     return {
       day,
+      metricDefs,
+      metrics,
       session: null,
       blocks: [],
       snatchBlocks: [],
@@ -130,6 +153,8 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
 
   return {
     day,
+    metricDefs,
+    metrics,
     session,
     blocks: blocks.data ?? [],
     snatchBlocks: snatchBlocks.data ?? [],

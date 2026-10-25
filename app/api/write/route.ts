@@ -41,6 +41,19 @@ const Actions = z.discriminatedUnion("action", [
     notes: z.string().max(2000).nullable().optional(),
   }),
   z.object({
+    action: z.literal("save_check_in"),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    metrics: z
+      .array(
+        z.object({
+          metric: z.string().min(1).max(64),
+          value_numeric: z.number().nullable().optional(),
+          value_text: z.string().max(4000).nullable().optional(),
+        }),
+      )
+      .max(40),
+  }),
+  z.object({
     action: z.literal("add_block"),
     session_id: uuid,
     workstream: z.enum(["snatch", "calisthenics", "hypertrophy"]),
@@ -210,6 +223,90 @@ export async function POST(request: Request) {
           .single();
         if (error) throw error;
         return NextResponse.json({ day: data });
+      }
+
+      case "save_check_in": {
+        // Only metrics the database defines are accepted, so a typo or a
+        // crafted payload cannot invent a dimension and quietly pollute the
+        // series the charts read.
+        const { data: defs, error: defsError } = await db
+          .from("daily_metric_defs")
+          .select("slug, kind, min_value, max_value")
+          .eq("is_active", true);
+        if (defsError) throw defsError;
+        const known = new Map((defs ?? []).map((d) => [d.slug, d]));
+
+        const unknown = input.metrics.filter((m) => !known.has(m.metric));
+        if (unknown.length) {
+          return NextResponse.json(
+            { error: `Unknown metric: ${unknown.map((m) => m.metric).join(", ")}` },
+            { status: 422 },
+          );
+        }
+
+        for (const entry of input.metrics) {
+          const def = known.get(entry.metric)!;
+          const numeric = entry.value_numeric ?? null;
+          if (numeric !== null) {
+            if (
+              (def.min_value !== null && numeric < Number(def.min_value)) ||
+              (def.max_value !== null && numeric > Number(def.max_value))
+            ) {
+              return NextResponse.json(
+                { error: `${entry.metric} is outside its allowed range.` },
+                { status: 422 },
+              );
+            }
+          }
+          const text = entry.value_text?.trim() ? entry.value_text.trim() : null;
+
+          // Clearing a field removes the row: a blank is "not recorded", which
+          // is different from a recorded zero.
+          if (numeric === null && text === null) {
+            const { error } = await db
+              .from("daily_metrics")
+              .delete()
+              .eq("metric_date", input.date)
+              .eq("metric", entry.metric)
+              .eq("provenance", "logged");
+            if (error) throw error;
+            continue;
+          }
+
+          const { data: existing, error: findError } = await db
+            .from("daily_metrics")
+            .select("id")
+            .eq("metric_date", input.date)
+            .eq("metric", entry.metric)
+            .eq("provenance", "logged")
+            .maybeSingle();
+          if (findError) throw findError;
+
+          if (existing) {
+            const { error } = await db
+              .from("daily_metrics")
+              .update({ value_numeric: numeric, value_text: text })
+              .eq("id", existing.id);
+            if (error) throw error;
+          } else {
+            const { error } = await db.from("daily_metrics").insert({
+              metric_date: input.date,
+              metric: entry.metric,
+              value_numeric: numeric,
+              value_text: text,
+              provenance: "logged",
+            });
+            if (error) throw error;
+          }
+        }
+
+        const { data, error } = await db
+          .from("daily_metrics")
+          .select("metric, value_numeric, value_text")
+          .eq("metric_date", input.date)
+          .eq("provenance", "logged");
+        if (error) throw error;
+        return NextResponse.json({ metrics: data });
       }
 
       case "add_block": {

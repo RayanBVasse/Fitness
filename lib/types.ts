@@ -17,6 +17,26 @@ export type Provenance = "logged" | "workbook_import" | "historical_reconstructi
  */
 export type DayStatus = "trained" | "rest" | "unlogged";
 
+export interface DailyMetricDef {
+  slug: string;
+  label: string;
+  grouping: string;
+  kind: "scale" | "number" | "text";
+  min_value: number | null;
+  max_value: number | null;
+  step: number | null;
+  unit: string | null;
+  in_quick_mode: boolean;
+  help: string | null;
+  sort_order: number;
+}
+
+export interface DailyMetric {
+  metric: string;
+  value_numeric: number | null;
+  value_text: string | null;
+}
+
 export interface DayRecord {
   day: string;
   status: DayStatus;

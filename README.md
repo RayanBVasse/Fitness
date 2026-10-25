@@ -13,6 +13,7 @@ standing in a gym, one-handed, between sets.
 | --- | --- | --- |
 | 1 | Schema, session model, snatch logging | **done** |
 | 2 | Hypertrophy logging | not started |
+| 2a | Daily check-in, quick mode | **done** |
 | 3 | Calisthenics logging with configurable success criteria | not started |
 | 4 | Injuries | not started |
 | 5 | Weekly report and charts | not started |
@@ -150,6 +151,14 @@ policies would be rewritten against `auth.uid()` and this gate replaced.
 
 These are deliberate and load-bearing. Changing them changes what the app can
 tell you.
+
+**The journal stores into `daily_metrics`**, the same table the import filled,
+so today's sleep score continues the recovered series rather than starting a
+rival to it. The dimensions live in `daily_metric_defs` — adding one is a row,
+not a migration and a deploy. Scales are 0-10 throughout, matching the history;
+a series that changes scale halfway through is not comparable with itself.
+Life context (food, gym notes) is text, never scored and never correlated
+against performance.
 
 **A day is not a session.** `fitness.days` records what a calendar day was —
 trained, rested, or carrying notes without asserting either. Rest is data: a
