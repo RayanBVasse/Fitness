@@ -64,6 +64,10 @@ const Actions = z.discriminatedUnion("action", [
     load_kg: z.number().min(0).max(1000).nullable().optional(),
     reps: z.number().int().min(0).max(200).nullable().optional(),
     sets_count: z.number().int().min(1).max(20).optional(),
+    /** Log the same set several times. Each becomes its own row: a set that
+     *  happened is a row, and `sets_count` means something else entirely —
+     *  it is how the imported history recorded a block it never broke down. */
+    repeat: z.number().int().min(1).max(12).optional(),
     side: z.enum(["both", "left", "right"]).optional(),
     order_vs_snatch: z.enum(["before_snatch", "after_snatch", "standalone", "unknown"]).optional(),
     /** A drop from the set it names, rather than a working set of its own. */
@@ -402,9 +406,7 @@ export async function POST(request: Request) {
       }
 
       case "log_hypertrophy_set": {
-        const { data, error } = await db
-          .from("hypertrophy_sets")
-          .insert({
+        const row = {
             session_id: input.session_id,
             session_block_id:
               input.session_block_id ??
@@ -421,11 +423,14 @@ export async function POST(request: Request) {
             notes: input.notes ?? null,
             logged_at: new Date().toISOString(),
             record_precision: "attempt",
-          })
-          .select()
-          .single();
+        };
+        const { data, error } = await db
+          .from("hypertrophy_sets")
+          .insert(Array.from({ length: input.repeat ?? 1 }, () => ({ ...row })))
+          .select();
         if (error) throw error;
-        return NextResponse.json({ set: data });
+        const sets = data ?? [];
+        return NextResponse.json({ set: sets[0], sets });
       }
 
       case "update_hypertrophy_set": {

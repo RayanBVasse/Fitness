@@ -10,6 +10,7 @@ import type {
   LastSkillSetting,
   ContextNote,
   MuscleGroup,
+  MuscleRegion,
   Skill,
   SkillVariation,
   DailyMetricDef,
@@ -121,6 +122,7 @@ export async function getReferenceData() {
     objective: (settingsMap.get("snatch_objective") as SnatchObjective | undefined) ?? null,
     ladder: (settingsMap.get("snatch_warmup_ladder") as WarmupLadder | undefined) ?? null,
     weekdayThemes: (settingsMap.get("weekday_themes") as WeekdayThemes | undefined) ?? {},
+    muscleRegions: (settingsMap.get("muscle_regions") as MuscleRegion[] | undefined) ?? [],
     heavyThresholdKg: (settingsMap.get("heavy_session_threshold_kg") as number | undefined) ?? null,
     error: gyms.error ?? variations.error ?? presets.error ?? settings.error,
   };

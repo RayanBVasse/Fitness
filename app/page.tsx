@@ -32,6 +32,7 @@ export default async function TodayPage() {
       recentExerciseIds={today.recentExerciseIds}
       recentSkillVariationIds={today.recentSkillVariationIds}
       muscleGroups={reference.muscleGroups}
+      muscleRegions={reference.muscleRegions}
       exercises={reference.exercises}
       skills={reference.skills}
       skillVariations={reference.skillVariations}

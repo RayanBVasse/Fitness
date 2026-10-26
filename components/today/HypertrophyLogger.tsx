@@ -9,6 +9,7 @@ import type {
   HypertrophySet,
   LastExerciseSetting,
   MuscleGroup,
+  MuscleRegion,
 } from "@/lib/types";
 
 /**
@@ -17,6 +18,11 @@ import type {
  * The load and reps are prefilled from the last time this exercise was done
  * at this gym — machine identity is (gym, exercise), so Ealing's pendulum
  * squat does not offer Greenford's number.
+ *
+ * You come in for a region, not an exercise: legs, or chest and biceps. The
+ * picker opens on that day's region and shows its twelve-to-fifteen machines
+ * with what each was last done at, so choosing one is reading rather than
+ * remembering. The other fifteen exercises are a tap away and not in the way.
  *
  * Every set is editable, before and after it is saved. The `+` on a block
  * opens the next set already filled in with the last one's numbers: confirm it
@@ -31,6 +37,9 @@ type Props = {
   gymId: number | null;
   exercises: Exercise[];
   muscleGroups: MuscleGroup[];
+  muscleRegions: MuscleRegion[];
+  /** The weekday theme's emphasis, used only to open on the likely region. */
+  regionHint: string | null;
   recentExerciseIds: number[];
   lastSettings: LastExerciseSetting[];
   initialSets: HypertrophySet[];
@@ -43,6 +52,8 @@ export function HypertrophyLogger({
   gymId,
   exercises,
   muscleGroups,
+  muscleRegions,
+  regionHint,
   recentExerciseIds,
   lastSettings,
   initialSets,
@@ -53,7 +64,18 @@ export function HypertrophyLogger({
   const [exerciseId, setExerciseId] = useState<number | null>(null);
   const [load, setLoad] = useState<string>("");
   const [reps, setReps] = useState<string>("");
-  const [showAll, setShowAll] = useState(false);
+  const [scope, setScope] = useState<string>(() => {
+    // Open on the day's region when the weekday theme names one. It is a
+    // starting point, never a restriction: every other region is one tap away
+    // and nothing is filtered out of "All".
+    const hint = (regionHint ?? "").toLowerCase();
+    const match = muscleRegions.find(
+      (r) => r.slug === hint || r.name.toLowerCase() === hint,
+    );
+    return match ? match.slug : "recent";
+  });
+  const [setsToAdd, setSetsToAdd] = useState(1);
+  const [machine, setMachine] = useState("");
   /** Which tile is open for editing: an existing set, or a new one on a block. */
   const [editing, setEditing] = useState<{ setId: string | null; exerciseId: number } | null>(
     null,
@@ -82,11 +104,13 @@ export function HypertrophyLogger({
 
   function choose(id: number) {
     setExerciseId(id);
-    // You found what you came for; the other 25 are just distance to scroll.
-    setShowAll(false);
     const previous = lastFor(id);
     setLoad(previous?.setting.load_kg != null ? String(Number(previous.setting.load_kg)) : "");
     setReps(previous?.setting.reps != null ? String(previous.setting.reps) : "");
+    // Only carried over from the same gym: a machine label from another gym
+    // names a machine that is not in front of you.
+    setMachine(previous?.sameGym ? (previous.setting.machine_label ?? "") : "");
+    setSetsToAdd(1);
   }
 
   function run(task: () => Promise<void>) {
@@ -104,16 +128,22 @@ export function HypertrophyLogger({
   function addSet() {
     if (exerciseId === null) return;
     run(async () => {
-      const result = await write<{ set: HypertrophySet }>({
+      // Each set becomes its own row, even when several are logged at once:
+      // three sets of six is three things that happened, and the next one may
+      // not match. The count is a shortcut for typing, not a data model.
+      const result = await write<{ sets: HypertrophySet[] }>({
         action: "log_hypertrophy_set",
         session_id: sessionId,
         session_block_id: sessionBlockId,
         exercise_id: exerciseId,
+        machine_label: machine.trim() === "" ? null : machine.trim(),
         load_kg: load === "" ? null : Number(load),
         reps: reps === "" ? null : Number(reps),
+        repeat: setsToAdd,
         side: "both",
       });
-      setSets((prev) => [...prev, result.set]);
+      setSets((prev) => [...prev, ...result.sets]);
+      setSetsToAdd(1);
     });
   }
 
@@ -177,6 +207,17 @@ export function HypertrophyLogger({
   }
 
   const recent = recentExerciseIds.map((id) => byId.get(id)).filter((e): e is Exercise => !!e);
+
+  /** What the picker is showing: a region's machines, the recent ones, or all. */
+  const region = muscleRegions.find((r) => r.slug === scope) ?? null;
+  const visible = region
+    ? exercises.filter((e) => {
+        const slug = slugOf(e.muscle_group_id);
+        return slug !== null && region.groups.includes(slug);
+      })
+    : scope === "all"
+      ? exercises
+      : recent;
   const volume = sets.reduce<number>((total, s) => total + Number(s.volume_load_kg ?? 0), 0);
 
   // One block per exercise, in the order each was first used. Returning to a
@@ -233,26 +274,75 @@ export function HypertrophyLogger({
         Hypertrophy
       </SectionTitle>
 
-      {/* What you actually use, not 27 rows in alphabetical order. */}
+      {/* Region first. A day is a region, not an exercise. */}
       <div className="flex flex-wrap gap-1.5">
-        {(showAll ? exercises : recent).map((e) => (
+        {muscleRegions.map((region) => (
           <Chip
-            key={e.id}
-            on={e.id === exerciseId}
-            hue={mgColour(slugOf(e.muscle_group_id))}
-            onClick={() => choose(e.id)}
+            key={region.slug}
+            on={scope === region.slug}
+            hue={mgColour(region.groups[0])}
+            onClick={() => setScope(region.slug)}
           >
-            {e.name}
+            {region.name}
           </Chip>
         ))}
-        <button
-          type="button"
-          onClick={() => setShowAll((v) => !v)}
-          className="min-h-[36px] rounded-full border border-dashed border-border px-3 text-xs font-semibold text-text-faint"
-        >
-          {showAll ? "Recent only" : `All ${exercises.length}`}
-        </button>
+        <Chip on={scope === "recent"} onClick={() => setScope("recent")}>
+          Recent
+        </Chip>
+        <Chip on={scope === "all"} onClick={() => setScope("all")}>
+          All {exercises.length}
+        </Chip>
       </div>
+
+      {/* Each machine with what it was last done at, so picking one is
+          reading rather than remembering. */}
+      {visible.length > 0 ? (
+        <div className="grid grid-cols-2 gap-1.5">
+          {visible.map((e) => {
+            const colour = mgColour(slugOf(e.muscle_group_id));
+            const previous = lastFor(e.id);
+            const on = e.id === exerciseId;
+            return (
+              <button
+                key={e.id}
+                type="button"
+                onClick={() => choose(e.id)}
+                aria-pressed={on}
+                className="min-h-[52px] rounded-[var(--radius)] border px-2 py-1.5 text-left"
+                // Every side named explicitly. `borderColor` is itself
+                // shorthand for four sides, so pairing it with a left-only
+                // value makes React warn and can leave the selected border
+                // unrepainted on rerender.
+                style={{
+                  borderTopColor: on ? colour : "var(--border)",
+                  borderRightColor: on ? colour : "var(--border)",
+                  borderBottomColor: on ? colour : "var(--border)",
+                  borderLeftColor: colour,
+                  borderLeftWidth: 4,
+                  background: on
+                    ? `color-mix(in oklab, ${colour} 10%, transparent)`
+                    : "transparent",
+                }}
+              >
+                <span className="block truncate text-xs font-semibold leading-tight">
+                  {e.name}
+                </span>
+                <span className="tnum block truncate text-[10px] leading-tight text-text-dim">
+                  {previous
+                    ? `${previous.setting.load_kg != null ? `${Number(previous.setting.load_kg)} kg` : "—"}` +
+                      `${previous.setting.reps != null ? ` × ${previous.setting.reps}` : ""}` +
+                      `${previous.sameGym ? "" : " (elsewhere)"}`
+                    : "not done here yet"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-[11px] text-text-dim">
+          No exercises in this region yet. Settings lists which muscle groups it covers.
+        </p>
+      )}
 
       {exercise ? (
         <div
@@ -277,19 +367,55 @@ export function HypertrophyLogger({
             <p className="mt-1 text-[11px] text-text-faint">No previous record for this one.</p>
           )}
 
-          <div className="mt-3 flex items-end gap-2">
+          {/* Which of two identical machines. Optional, and remembered per
+              gym: machine identity is (gym, exercise), and this is what
+              separates the two leg presses in one room. */}
+          <input
+            type="text"
+            value={machine}
+            disabled={!canWrite || busy}
+            placeholder="Machine or station (optional)"
+            onChange={(event) => setMachine(event.target.value)}
+            aria-label="Machine or station"
+            className="mt-3 h-9 w-full rounded-[var(--radius)] border border-border bg-surface px-2 text-sm"
+          />
+
+          <div className="mt-2 flex items-end gap-2">
             <Field label="Load" unit="kg" value={load} onChange={setLoad} step="0.5" />
             <Field label="Reps" value={reps} onChange={setReps} step="1" />
-            <button
-              type="button"
-              disabled={!canWrite || busy}
-              onClick={() => addSet()}
-              className="min-h-[48px] flex-1 rounded-[var(--radius)] text-sm font-bold disabled:opacity-40"
-              style={{ background: "var(--accent)", color: "var(--accent-text)" }}
-            >
-              Add set
-            </button>
+            <div>
+              <div className="mb-1 text-[10px] uppercase tracking-wide text-text-dim">Sets</div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setSetsToAdd((n) => Math.max(1, n - 1))}
+                  aria-label="One fewer set"
+                  className="h-12 w-9 rounded-[var(--radius)] border border-border text-lg font-semibold"
+                >
+                  −
+                </button>
+                <span className="tnum w-6 text-center text-lg font-semibold">{setsToAdd}</span>
+                <button
+                  type="button"
+                  onClick={() => setSetsToAdd((n) => Math.min(12, n + 1))}
+                  aria-label="One more set"
+                  className="h-12 w-9 rounded-[var(--radius)] border border-border text-lg font-semibold"
+                >
+                  +
+                </button>
+              </div>
+            </div>
           </div>
+
+          <button
+            type="button"
+            disabled={!canWrite || busy}
+            onClick={() => addSet()}
+            className="mt-2 min-h-[48px] w-full rounded-[var(--radius)] text-sm font-bold disabled:opacity-40"
+            style={{ background: "var(--accent)", color: "var(--accent-text)" }}
+          >
+            {busy ? "Saving…" : setsToAdd === 1 ? "Add set" : `Add ${setsToAdd} sets`}
+          </button>
           {exercise.is_unilateral ? (
             <p className="mt-2 text-[11px] text-text-faint">
               Unilateral — log each side as its own set if they differ.

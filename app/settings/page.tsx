@@ -110,6 +110,42 @@ export default async function SettingsPage() {
         </Card>
       ) : null}
 
+      {reference.muscleRegions.length > 0 ? (
+        <Card>
+          <SectionTitle>Training regions</SectionTitle>
+          <p className="text-xs leading-snug text-text-dim">
+            Which muscle groups you train together. The hypertrophy picker opens on the
+            region the day&rsquo;s theme names and lists its machines with what each was last
+            done at. Editing the <code>muscle_regions</code> settings row changes a split
+            without a deploy.
+          </p>
+          <ul className="mt-3 space-y-1.5">
+            {reference.muscleRegions.map((region) => (
+              <li key={region.slug} className="flex items-baseline gap-2 text-sm">
+                <span className="w-28 shrink-0 font-semibold">{region.name}</span>
+                <span className="text-[11px] text-text-dim">
+                  {region.groups
+                    .map((slug) => reference.muscleGroups.find((g) => g.slug === slug)?.name ?? slug)
+                    .join(" · ")}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {reference.muscleGroups.some(
+            (g) => !reference.muscleRegions.some((r) => r.groups.includes(g.slug)),
+          ) ? (
+            <p className="mt-2 text-[11px] text-text-faint">
+              In no region, reachable through &ldquo;All&rdquo;:{" "}
+              {reference.muscleGroups
+                .filter((g) => !reference.muscleRegions.some((r) => r.groups.includes(g.slug)))
+                .map((g) => g.name)
+                .join(", ")}
+              .
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
+
       <Card>
         <SectionTitle>Context notes</SectionTitle>
         <p className="text-sm text-text-dim">

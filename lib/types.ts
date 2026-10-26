@@ -98,6 +98,18 @@ export interface WeekdayTheme {
 
 export type WeekdayThemes = Record<string, WeekdayTheme>;
 
+/**
+ * A training region: the muscle groups you train together on a day. One level
+ * above a muscle group, stored in settings so a change of split is an edit
+ * rather than a deploy.
+ */
+export interface MuscleRegion {
+  slug: string;
+  name: string;
+  /** muscle_group slugs. */
+  groups: string[];
+}
+
 export type NoteReviewStatus = "pending" | "approved" | "rejected";
 
 export interface ContextNote {

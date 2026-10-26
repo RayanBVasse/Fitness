@@ -22,6 +22,7 @@ import {
   type LastExerciseSetting,
   type LastSkillSetting,
   type MuscleGroup,
+  type MuscleRegion,
   type Skill,
   type SkillVariation,
   type Session,
@@ -55,6 +56,7 @@ type Props = {
   recentExerciseIds: number[];
   recentSkillVariationIds: number[];
   muscleGroups: MuscleGroup[];
+  muscleRegions: MuscleRegion[];
   exercises: Exercise[];
   skills: Skill[];
   skillVariations: SkillVariation[];
@@ -101,6 +103,7 @@ export function TodayScreen({
   recentExerciseIds,
   recentSkillVariationIds,
   muscleGroups,
+  muscleRegions,
   exercises,
   skills,
   skillVariations,
@@ -496,6 +499,8 @@ export function TodayScreen({
                 gymId={session.gym_id}
                 exercises={exercises}
                 muscleGroups={muscleGroups}
+                muscleRegions={muscleRegions}
+                regionHint={theme?.emphasis ?? null}
                 recentExerciseIds={recentExerciseIds}
                 lastSettings={lastExerciseSettings}
                 initialSets={sessionHypertrophy}
