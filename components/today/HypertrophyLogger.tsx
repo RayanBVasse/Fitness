@@ -113,6 +113,65 @@ export function HypertrophyLogger({
   const recent = recentExerciseIds.map((id) => byId.get(id)).filter((e): e is Exercise => !!e);
   const volume = sets.reduce<number>((total, s) => total + Number(s.volume_load_kg ?? 0), 0);
 
+  // Consecutive sets of one exercise are one group. Consecutive rather than
+  // merged: coming back to an exercise later in a session is a second block of
+  // work, and collapsing the two would hide that.
+  const groups: {
+    key: string;
+    name: string;
+    muscleGroupId: number | null;
+    sets: HypertrophySet[];
+    volume: number;
+  }[] = [];
+  for (const set of sets) {
+    const last = groups.at(-1);
+    if (last && last.sets[0].exercise_id === set.exercise_id) {
+      last.sets.push(set);
+      last.volume += Number(set.volume_load_kg ?? 0);
+    } else {
+      const exercise = byId.get(set.exercise_id);
+      groups.push({
+        key: set.id,
+        name: exercise?.name ?? "Exercise",
+        muscleGroupId: exercise?.muscle_group_id ?? null,
+        sets: [set],
+        volume: Number(set.volume_load_kg ?? 0),
+      });
+    }
+  }
+
+  /**
+   * Identical sets collapse into one line with a count. Three sets of 52 kg x 6
+   * is one fact written once, not three rows to read. A new line appears only
+   * when the load or the reps change — which is the thing worth noticing.
+   */
+  function linesFor(groupSets: HypertrophySet[]) {
+    const lines: {
+      key: string;
+      load: number | null;
+      reps: number | null;
+      isDrop: boolean;
+      ids: string[];
+    }[] = [];
+    for (const set of groupSets) {
+      const load = set.load_kg === null ? null : Number(set.load_kg);
+      const last = lines.at(-1);
+      if (last && last.load === load && last.reps === set.reps && last.isDrop === set.is_drop) {
+        last.ids.push(set.id);
+      } else {
+        lines.push({ key: set.id, load, reps: set.reps, isDrop: set.is_drop, ids: [set.id] });
+      }
+    }
+    return lines;
+  }
+
+  /** Fixed order by muscle group, reused past five. Never per exercise. */
+  function groupColour(muscleGroupId: number | null): string {
+    if (muscleGroupId === null) return "var(--border)";
+    const index = muscleGroups.findIndex((g) => g.id === muscleGroupId);
+    return `var(--grp-${(index < 0 ? 0 : index) % 5 + 1})`;
+  }
+
   return (
     <div className="space-y-3">
       <SectionTitle
@@ -198,41 +257,75 @@ export function HypertrophyLogger({
         </div>
       ) : null}
 
-      {sets.length > 0 ? (
-        <ul className="space-y-1.5">
-          {sets.map((set) => (
-            <li
-              key={set.id}
-              className="flex items-center gap-2 rounded-[var(--radius)] border border-border px-3 py-2"
-            >
-              <span className="min-w-0 flex-1 truncate text-sm">
-                {byId.get(set.exercise_id)?.name ?? "Exercise"}
-                {set.is_drop ? <Pill tone="caught">drop</Pill> : null}
-              </span>
-              <span className="tnum text-sm text-text-dim">
-                {set.load_kg != null ? `${Number(set.load_kg)} kg` : "—"}
-                {set.reps != null ? ` × ${set.reps}` : ""}
-              </span>
-              <button
-                type="button"
-                disabled={!canWrite || busy}
-                onClick={() => addSet(set)}
-                aria-label="Repeat this set"
-                className="min-h-[32px] rounded border border-border px-2 text-xs font-semibold text-text-dim disabled:opacity-40"
+      {groups.length > 0 ? (
+        <ul className="space-y-2">
+          {groups.map((group) => {
+            const colour = groupColour(group.muscleGroupId);
+            return (
+              <li
+                key={group.key}
+                className="overflow-hidden rounded-[var(--radius)] border border-border"
+                // A stripe, not a fill: it groups the rows without competing
+                // with the numbers, which are the thing being read.
+                style={{ borderLeft: `4px solid ${colour}` }}
               >
-                +1
-              </button>
-              <button
-                type="button"
-                disabled={!canWrite || busy}
-                onClick={() => remove(set.id)}
-                aria-label="Delete this set"
-                className="min-h-[32px] px-1 text-sm text-text-faint disabled:opacity-40"
-              >
-                ×
-              </button>
-            </li>
-          ))}
+                <div
+                  className="flex items-baseline justify-between gap-2 px-3 py-1.5"
+                  style={{ background: `color-mix(in oklab, ${colour} 12%, var(--surface))` }}
+                >
+                  <span className="truncate text-sm font-semibold">{group.name}</span>
+                  <span className="tnum shrink-0 text-[11px] text-text-dim">
+                    {group.sets.length} set{group.sets.length === 1 ? "" : "s"} ·{" "}
+                    {Math.round(group.volume).toLocaleString("en-GB")} kg
+                  </span>
+                </div>
+
+                <ul className="divide-y divide-border">
+                  {linesFor(group.sets).map((line) => (
+                    <li key={line.key} className="flex items-center gap-2 px-3 py-2">
+                      <span className="tnum flex-1 text-sm">
+                        {line.load != null ? `${line.load} kg` : "—"}
+                        {line.reps != null ? ` × ${line.reps}` : ""}
+                        {line.ids.length > 1 ? (
+                          <span className="ml-2 text-[11px] font-semibold text-text-dim">
+                            {line.ids.length} sets
+                          </span>
+                        ) : null}
+                      </span>
+                      {line.isDrop ? <Pill tone="caught">drop</Pill> : null}
+                      <button
+                        type="button"
+                        disabled={!canWrite || busy}
+                        onClick={() => addSet(group.sets.find((s) => s.id === line.ids[0]))}
+                        aria-label={`Add another set of ${group.name} at this weight`}
+                        className="min-h-[34px] rounded-md border px-2.5 text-xs font-bold disabled:opacity-40"
+                        style={{
+                          borderColor: "var(--accent)",
+                          color: "var(--accent)",
+                          background: "color-mix(in oklab, var(--accent) 14%, transparent)",
+                        }}
+                      >
+                        +1
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canWrite || busy}
+                        onClick={() => remove(line.ids[line.ids.length - 1])}
+                        aria-label={
+                          line.ids.length > 1
+                            ? `Remove one set of ${group.name} at this weight`
+                            : `Delete this set of ${group.name}`
+                        }
+                        className="min-h-[34px] px-1 text-sm text-text-faint disabled:opacity-40"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
 

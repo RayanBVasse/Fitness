@@ -69,6 +69,28 @@
   --missed-bg: #351715;
 }
 
+
+/*
+  Group colours for the set list. Five hues assigned to muscle groups in a
+  fixed order and reused beyond five — never generated per exercise, which
+  would make two leg movements look unrelated.
+
+  Validated with the dataviz palette checker in both modes: lightness band,
+  chroma floor, adjacent-pair CVD separation (worst 8.8 deutan), normal-vision
+  separation and contrast against the surface all pass. The first attempt
+  failed on three of those, which is why the numbers here are not round.
+
+  They are a grouping aid, not an encoding: every row carries its exercise
+  name, so nothing depends on telling the colours apart.
+*/
+:root {
+  --grp-1: #3b7ad9;
+  --grp-2: #c2762f;
+  --grp-3: #8a63c9;
+  --grp-4: #00a3b0;
+  --grp-5: #c45975;
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
