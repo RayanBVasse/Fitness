@@ -167,7 +167,12 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
       .from("context_notes")
       .select<string, ContextNote>("*")
       .eq("anchor_date", date)
-      .eq("source_type", "authored_in_app")
+      // Notes written here, and the check-in text that 0015 folded in. The
+      // imported pack is excluded: it belongs to the review screen, not to a
+      // day's working surface. Leaving the folded rows out would have left
+      // them saved and invisible, which is the failure the fold existed to
+      // avoid.
+      .in("source_type", ["authored_in_app", "daily_check_in"])
       .order("created_at", { ascending: true }),
   );
 
