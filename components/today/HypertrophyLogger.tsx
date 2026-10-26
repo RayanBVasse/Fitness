@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
-import { Pill, SectionTitle } from "@/components/ui";
+import { SectionTitle } from "@/components/ui";
 import type {
   Exercise,
   HypertrophySet,
@@ -113,9 +113,9 @@ export function HypertrophyLogger({
   const recent = recentExerciseIds.map((id) => byId.get(id)).filter((e): e is Exercise => !!e);
   const volume = sets.reduce<number>((total, s) => total + Number(s.volume_load_kg ?? 0), 0);
 
-  // Consecutive sets of one exercise are one group. Consecutive rather than
-  // merged: coming back to an exercise later in a session is a second block of
-  // work, and collapsing the two would hide that.
+  // One block per exercise, in the order each was first used. Returning to a
+  // movement later in the session joins its block rather than opening a second
+  // one, which is how it reads on paper.
   const groups: {
     key: string;
     name: string;
@@ -124,45 +124,20 @@ export function HypertrophyLogger({
     volume: number;
   }[] = [];
   for (const set of sets) {
-    const last = groups.at(-1);
-    if (last && last.sets[0].exercise_id === set.exercise_id) {
-      last.sets.push(set);
-      last.volume += Number(set.volume_load_kg ?? 0);
-    } else {
+    let group = groups.find((g) => g.sets[0].exercise_id === set.exercise_id);
+    if (!group) {
       const exercise = byId.get(set.exercise_id);
-      groups.push({
-        key: set.id,
+      group = {
+        key: `e${set.exercise_id}`,
         name: exercise?.name ?? "Exercise",
         muscleGroupId: exercise?.muscle_group_id ?? null,
-        sets: [set],
-        volume: Number(set.volume_load_kg ?? 0),
-      });
+        sets: [],
+        volume: 0,
+      };
+      groups.push(group);
     }
-  }
-
-  /**
-   * Identical sets collapse into one line with a count. Three sets of 52 kg x 6
-   * is one fact written once, not three rows to read. A new line appears only
-   * when the load or the reps change — which is the thing worth noticing.
-   */
-  function linesFor(groupSets: HypertrophySet[]) {
-    const lines: {
-      key: string;
-      load: number | null;
-      reps: number | null;
-      isDrop: boolean;
-      ids: string[];
-    }[] = [];
-    for (const set of groupSets) {
-      const load = set.load_kg === null ? null : Number(set.load_kg);
-      const last = lines.at(-1);
-      if (last && last.load === load && last.reps === set.reps && last.isDrop === set.is_drop) {
-        last.ids.push(set.id);
-      } else {
-        lines.push({ key: set.id, load, reps: set.reps, isDrop: set.is_drop, ids: [set.id] });
-      }
-    }
-    return lines;
+    group.sets.push(set);
+    group.volume += Number(set.volume_load_kg ?? 0);
   }
 
   /** Fixed order by muscle group, reused past five. Never per exercise. */
@@ -280,49 +255,51 @@ export function HypertrophyLogger({
                   </span>
                 </div>
 
-                <ul className="divide-y divide-border">
-                  {linesFor(group.sets).map((line) => (
-                    <li key={line.key} className="flex items-center gap-2 px-3 py-2">
-                      <span className="tnum flex-1 text-sm">
-                        {line.load != null ? `${line.load} kg` : "—"}
-                        {line.reps != null ? ` × ${line.reps}` : ""}
-                        {line.ids.length > 1 ? (
-                          <span className="ml-2 text-[11px] font-semibold text-text-dim">
-                            {line.ids.length} sets
-                          </span>
-                        ) : null}
-                      </span>
-                      {line.isDrop ? <Pill tone="caught">drop</Pill> : null}
+                <div className="flex flex-wrap gap-1 p-2">
+                  {group.sets.map((set) => (
+                    <div
+                      key={set.id}
+                      className="relative rounded-md border border-border px-2 py-1 text-center"
+                      style={{ background: "var(--surface-2)" }}
+                    >
+                      <div className="tnum text-sm font-semibold leading-tight">
+                        {set.load_kg != null ? Number(set.load_kg) : "—"}
+                        <span className="text-[10px] font-normal text-text-faint"> kg</span>
+                      </div>
+                      <div className="tnum text-[10px] leading-tight text-text-dim">
+                        × {set.reps ?? "—"}
+                        {set.is_drop ? " drop" : ""}
+                      </div>
                       <button
                         type="button"
                         disabled={!canWrite || busy}
-                        onClick={() => addSet(group.sets.find((s) => s.id === line.ids[0]))}
-                        aria-label={`Add another set of ${group.name} at this weight`}
-                        className="min-h-[34px] rounded-md border px-2.5 text-xs font-bold disabled:opacity-40"
-                        style={{
-                          borderColor: "var(--accent)",
-                          color: "var(--accent)",
-                          background: "color-mix(in oklab, var(--accent) 14%, transparent)",
-                        }}
-                      >
-                        +1
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!canWrite || busy}
-                        onClick={() => remove(line.ids[line.ids.length - 1])}
-                        aria-label={
-                          line.ids.length > 1
-                            ? `Remove one set of ${group.name} at this weight`
-                            : `Delete this set of ${group.name}`
-                        }
-                        className="min-h-[34px] px-1 text-sm text-text-faint disabled:opacity-40"
+                        onClick={() => remove(set.id)}
+                        aria-label={`Delete this set of ${group.name}`}
+                        className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-border text-[9px] leading-none text-text-faint disabled:opacity-40"
+                        style={{ background: "var(--surface)" }}
                       >
                         ×
                       </button>
-                    </li>
+                    </div>
                   ))}
-                </ul>
+
+                  {/* Adds another set at the last values used for this
+                      exercise, which is what the next set usually is. */}
+                  <button
+                    type="button"
+                    disabled={!canWrite || busy}
+                    onClick={() => addSet(group.sets[group.sets.length - 1])}
+                    aria-label={`Add another set of ${group.name}`}
+                    className="min-w-[44px] rounded-md border px-2 py-1 text-sm font-bold disabled:opacity-40"
+                    style={{
+                      borderColor: "var(--accent)",
+                      color: "var(--accent)",
+                      background: "color-mix(in oklab, var(--accent) 14%, transparent)",
+                    }}
+                  >
+                    +
+                  </button>
+                </div>
               </li>
             );
           })}

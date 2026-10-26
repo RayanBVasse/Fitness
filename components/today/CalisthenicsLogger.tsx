@@ -166,20 +166,29 @@ export function CalisthenicsLogger({
             </p>
           ) : null}
 
-          <div className="mt-3 grid grid-cols-2 gap-3">
+          <p className="mt-2 text-[10px] leading-snug text-text-faint">
+            Tapping a success counts an attempt too. Successes never exceed attempts.
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-3">
             <Counter
               label="Attempts"
               value={attempts}
               onChange={(n) => {
                 setAttempts(n);
+                // Lowering attempts below successes lowers successes with it.
                 if (successes > n) setSuccesses(n);
               }}
             />
             <Counter
               label="Successes"
               value={successes}
-              max={attempts}
-              onChange={setSuccesses}
+              onChange={(n) => {
+                setSuccesses(n);
+                // Logging a success you have not logged an attempt for is not
+                // an error: it means both happened. Raise attempts to match
+                // rather than refusing the tap.
+                if (n > attempts) setAttempts(n);
+              }}
             />
           </div>
 
