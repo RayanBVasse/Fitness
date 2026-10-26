@@ -27,6 +27,7 @@ export default async function TodayPage() {
       snatchBlocks={today.snatchBlocks}
       hypertrophySets={today.hypertrophySets}
       calisthenicsEntries={today.calisthenicsEntries}
+      calisthenicsAttempts={today.calisthenicsAttempts}
       lastExerciseSettings={today.lastExerciseSettings}
       lastSkillSettings={today.lastSkillSettings}
       recentExerciseIds={today.recentExerciseIds}

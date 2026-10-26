@@ -82,6 +82,7 @@ export function HypertrophyLogger({
   );
   const [editLoad, setEditLoad] = useState("");
   const [editReps, setEditReps] = useState("");
+  const [editRir, setEditRir] = useState("");
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -153,6 +154,9 @@ export function HypertrophyLogger({
     setEditing({ setId: null, exerciseId: previous.exercise_id });
     setEditLoad(previous.load_kg != null ? String(Number(previous.load_kg)) : "");
     setEditReps(previous.reps != null ? String(previous.reps) : "");
+    // Effort is never carried forward. How close the last set was to failure
+    // says nothing about this one — that is the whole reason to record it.
+    setEditRir("");
   }
 
   function openEdit(set: HypertrophySet) {
@@ -160,6 +164,7 @@ export function HypertrophyLogger({
     setEditing({ setId: set.id, exerciseId: set.exercise_id });
     setEditLoad(set.load_kg != null ? String(Number(set.load_kg)) : "");
     setEditReps(set.reps != null ? String(set.reps) : "");
+    setEditRir(set.rir != null ? String(set.rir) : "");
   }
 
   function commitEdit() {
@@ -167,6 +172,7 @@ export function HypertrophyLogger({
     if (!current) return;
     const nextLoad = editLoad.trim() === "" ? null : Number(editLoad);
     const nextReps = editReps.trim() === "" ? null : Number(editReps);
+    const nextRir = editRir.trim() === "" ? null : Number(editRir);
     if (
       (nextLoad !== null && !Number.isFinite(nextLoad)) ||
       (nextReps !== null && !Number.isFinite(nextReps))
@@ -181,6 +187,7 @@ export function HypertrophyLogger({
           set_id: current.setId,
           load_kg: nextLoad,
           reps: nextReps,
+          rir: nextRir,
         });
         setSets((prev) => prev.map((s) => (s.id === current.setId ? result.set : s)));
       } else {
@@ -456,9 +463,12 @@ export function HypertrophyLogger({
                         label={group.name}
                         load={editLoad}
                         reps={editReps}
+                        rir={editRir}
+                        showRir
                         disabled={!canWrite || busy}
                         onLoad={setEditLoad}
                         onReps={setEditReps}
+                        onRir={setEditRir}
                         onCommit={commitEdit}
                         onCancel={() => setEditing(null)}
                       />
@@ -482,6 +492,7 @@ export function HypertrophyLogger({
                           <div className="tnum text-[10px] leading-tight text-text-dim">
                             × {set.reps ?? "—"}
                             {set.is_drop ? " drop" : ""}
+                            {set.rir != null ? ` · ${set.rir}` : ""}
                           </div>
                         </button>
                         <button
@@ -506,9 +517,12 @@ export function HypertrophyLogger({
                       label={group.name}
                       load={editLoad}
                       reps={editReps}
+                      rir={editRir}
+                      showRir={false}
                       disabled={!canWrite || busy}
                       onLoad={setEditLoad}
                       onReps={setEditReps}
+                      onRir={setEditRir}
                       onCommit={commitEdit}
                       onCancel={() => setEditing(null)}
                     />
@@ -558,9 +572,12 @@ function SetEditor({
   hue,
   load,
   reps,
+  rir,
+  showRir,
   disabled,
   onLoad,
   onReps,
+  onRir,
   onCommit,
   onCancel,
 }: {
@@ -568,9 +585,13 @@ function SetEditor({
   hue: string;
   load: string;
   reps: string;
+  rir: string;
+  /** Only on an existing set: effort is rated after the set, not before. */
+  showRir: boolean;
   disabled: boolean;
   onLoad: (value: string) => void;
   onReps: (value: string) => void;
+  onRir: (value: string) => void;
   onCommit: () => void;
   onCancel: () => void;
 }) {
@@ -606,7 +627,7 @@ function SetEditor({
         onKeyDown={keys}
         className={`${field} w-14`}
       />
-      <span className="text-[10px] text-text-faint">×</span>
+      <span className="text-[10px] text-text-dim">×</span>
       <input
         type="number"
         inputMode="numeric"
@@ -620,6 +641,26 @@ function SetEditor({
         onKeyDown={keys}
         className={`${field} w-12`}
       />
+      {showRir ? (
+        <>
+          <span className="text-[10px] text-text-dim">RIR</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            step="1"
+            min="0"
+            max="10"
+            value={rir}
+            disabled={disabled}
+            placeholder="—"
+            aria-label={`Reps in reserve, ${label}`}
+            onFocus={(event) => event.target.select()}
+            onChange={(event) => onRir(event.target.value)}
+            onKeyDown={keys}
+            className={`${field} w-10`}
+          />
+        </>
+      ) : null}
       <button
         type="button"
         disabled={disabled}

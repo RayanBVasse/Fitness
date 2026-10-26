@@ -179,6 +179,8 @@ export interface SkillVariation {
   skill_id: number;
   slug: string;
   name: string;
+  /** Rank within the parent skill, 1 = easiest. Never compared across skills. */
+  difficulty: number | null;
   min_hold_seconds: number | null;
   requires_no_kick: boolean;
   requires_controlled_ascent: boolean;
@@ -209,6 +211,26 @@ export interface HypertrophySet {
   notes: string | null;
   volume_load_kg: number | null;
   logged_at: string | null;
+  /** Reps in reserve: how many more were left. A report, not a measurement. */
+  rir: number | null;
+}
+
+/**
+ * One attempt at a skill. The counters on screen add and remove these rows;
+ * attempts, successes, holds and control counts are all read back off them,
+ * so no two figures about one entry can disagree.
+ */
+export interface CalisthenicsAttempt {
+  id: string;
+  entry_id: string;
+  ordinal: number;
+  /** null = recorded but never judged, which is not the same as a failure. */
+  succeeded: boolean | null;
+  hold_seconds: number | null;
+  controlled_ascent: boolean | null;
+  controlled_descent: boolean | null;
+  negative_seconds: number | null;
+  notes: string | null;
 }
 
 export interface CalisthenicsEntry {
@@ -224,6 +246,7 @@ export interface CalisthenicsEntry {
   controlled_ascent: boolean | null;
   controlled_descent: boolean | null;
   assistance_id: number | null;
+  quality_10: number | null;
   notes: string | null;
   logged_at: string | null;
 }

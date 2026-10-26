@@ -52,6 +52,9 @@ CONTEXT YOU SHOULD KNOW
 Snatch outcomes have three states: stood (received and stood up — the only success), received_not_stood (caught, never stood), and missed. Receiving and standing are different capabilities. Success and technical quality are recorded separately: a lift that was stood is not therefore a good lift.
 Pulls and bottom stands are not snatches and never count towards a success rate.
 Hypertrophy loads are not comparable across gyms, because the machines differ. Volume load is a training metric, not evidence of muscle growth.
+RIR is the athlete's estimate of how many reps were left, so it is a report, not a measurement. It is least reliable far from failure, and a trend in it partly measures the athlete getting better at estimating rather than the training changing. Never treat an RIR series as evidence on its own.
+Calisthenics figures counted from individual attempts and figures carried over as a block summary are not the same thing. Tool results name the basis; say which you are using.
+Skill variation difficulty ranks within one skill only. A level 3 handstand and a level 3 back lever have nothing in common.
 Imported history is a reconstruction from conversation; newly logged data is precise. Tool results tell you which is which — keep them apart rather than averaging them.
 A day with no session is unlogged. That is not the same as rested.
 

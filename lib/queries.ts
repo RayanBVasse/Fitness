@@ -2,6 +2,7 @@ import { safeRead } from "./supabase";
 import { londonToday } from "./time";
 import type {
   AssistanceType,
+  CalisthenicsAttempt,
   CalisthenicsEntry,
   DailyMetric,
   Exercise,
@@ -53,6 +54,7 @@ export interface TodayData {
   snatchBlocks: SnatchBlock[];
   hypertrophySets: HypertrophySet[];
   calisthenicsEntries: CalisthenicsEntry[];
+  calisthenicsAttempts: CalisthenicsAttempt[];
   /** The most recent logged value per metric, from before today. Shown as a
    *  reference beside each field and never filled in: a value you did not
    *  measure today is not a measurement of today. */
@@ -164,6 +166,17 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
       .limit(1),
   );
 
+  const attemptsResult = await safeRead<CalisthenicsAttempt[]>((c) =>
+    c
+      .from("calisthenics_attempts")
+      .select<string, CalisthenicsAttempt>("*")
+      .in(
+        "entry_id",
+        (calisthenicsEntries.data ?? []).map((e) => e.id),
+      )
+      .order("ordinal"),
+  );
+
   const notesResult = await safeRead<ContextNote[]>((c) =>
     c
       .from("context_notes")
@@ -184,6 +197,7 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
       metricDefs,
       metrics,
       notes: notesResult.data ?? [],
+      calisthenicsAttempts: [],
       sessions: [],
       blocks: [],
       hypertrophySets: [],
@@ -257,6 +271,7 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     snatchBlocks: snatchBlocks.data ?? [],
     hypertrophySets: hypertrophySets.data ?? [],
     calisthenicsEntries: calisthenicsEntries.data ?? [],
+    calisthenicsAttempts: attemptsResult.data ?? [],
     lastMetricValues: dedupeByMetric(priorMetrics.data ?? []),
     lastExerciseSettings: lastExercise.data ?? [],
     lastSkillSettings: lastSkill.data ?? [],

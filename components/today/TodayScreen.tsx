@@ -10,10 +10,11 @@ import { CalisthenicsLogger } from "@/components/today/CalisthenicsLogger";
 import { DayNotes } from "@/components/today/DayNotes";
 import { DayPerformance } from "@/components/today/DayPerformance";
 import { Card, Chip, Pill, SectionTitle, wsColour } from "@/components/ui";
-import { isoWeekday, londonTime, longDate, weekdayName, daysBetween } from "@/lib/time";
+import { isoWeekday, londonTime, longDate, weekdayName } from "@/lib/time";
 import {
   WORKSTREAM_LABELS,
   type AssistanceType,
+  type CalisthenicsAttempt,
   type CalisthenicsEntry,
   type ContextNote,
   type Exercise,
@@ -51,6 +52,7 @@ type Props = {
   snatchBlocks: SnatchBlock[];
   hypertrophySets: HypertrophySet[];
   calisthenicsEntries: CalisthenicsEntry[];
+  calisthenicsAttempts: CalisthenicsAttempt[];
   lastExerciseSettings: LastExerciseSetting[];
   lastSkillSettings: LastSkillSetting[];
   recentExerciseIds: number[];
@@ -98,6 +100,7 @@ export function TodayScreen({
   snatchBlocks,
   hypertrophySets,
   calisthenicsEntries,
+  calisthenicsAttempts,
   lastExerciseSettings,
   lastSkillSettings,
   recentExerciseIds,
@@ -528,6 +531,9 @@ export function TodayScreen({
                 recentVariationIds={recentSkillVariationIds}
                 lastSettings={lastSkillSettings}
                 initialEntries={sessionCalisthenics}
+                initialAttempts={calisthenicsAttempts.filter((a) =>
+                  sessionCalisthenics.some((e) => e.id === a.entry_id),
+                )}
                 canWrite={canWrite}
               />
               <div className="mt-3">
@@ -574,43 +580,6 @@ export function TodayScreen({
         />
       </Card>
 
-      {lastSession ? (
-        <Card>
-          <SectionTitle
-            aside={`${daysBetween(lastSession.session_date, date)} day${
-              daysBetween(lastSession.session_date, date) === 1 ? "" : "s"
-            } ago`}
-          >
-            Last recorded workout
-          </SectionTitle>
-          <div className="flex items-baseline justify-between">
-            <div>
-              <div className="font-semibold">{longDate(lastSession.session_date)}</div>
-              <div className="text-sm text-text-dim">
-                {lastSession.gym ?? "Gym not recorded"}
-                {" · "}
-                {(lastSession.workstreams ?? [])
-                  .map((w) => WORKSTREAM_LABELS[w])
-                  .join(", ") || "no workstreams recorded"}
-              </div>
-            </div>
-            <div className="tnum text-right text-sm text-text-dim">
-              {lastSession.snatch_blocks > 0 ? <div>{lastSession.snatch_blocks} snatch</div> : null}
-              {lastSession.hypertrophy_sets > 0 ? (
-                <div>{lastSession.hypertrophy_sets} sets</div>
-              ) : null}
-              {lastSession.calisthenics_entries > 0 ? (
-                <div>{lastSession.calisthenics_entries} skills</div>
-              ) : null}
-            </div>
-          </div>
-          {lastSession.provenance !== "logged" ? (
-            <div className="mt-2">
-              <Pill>reconstructed record</Pill>
-            </div>
-          ) : null}
-        </Card>
-      ) : null}
     </div>
   );
 }

@@ -79,6 +79,7 @@ const Actions = z.discriminatedUnion("action", [
     set_id: uuid,
     load_kg: z.number().min(0).max(1000).nullable(),
     reps: z.number().int().min(0).max(200).nullable(),
+    rir: z.number().int().min(0).max(10).nullable(),
   }),
   z.object({
     action: z.literal("delete_hypertrophy_set"),
@@ -101,6 +102,28 @@ const Actions = z.discriminatedUnion("action", [
     notes: z.string().max(2000).nullable().optional(),
   }),
   z.object({
+    action: z.literal("log_attempt_row"),
+    entry_id: uuid,
+    succeeded: z.boolean().nullable(),
+    hold_seconds: z.number().min(0).max(3600).nullable().optional(),
+    controlled_ascent: z.boolean().nullable().optional(),
+    controlled_descent: z.boolean().nullable().optional(),
+    negative_seconds: z.number().min(0).max(3600).nullable().optional(),
+  }),
+  z.object({
+    action: z.literal("update_attempt_row"),
+    attempt_id: uuid,
+    succeeded: z.boolean().nullable().optional(),
+    hold_seconds: z.number().min(0).max(3600).nullable().optional(),
+    controlled_ascent: z.boolean().nullable().optional(),
+    controlled_descent: z.boolean().nullable().optional(),
+    negative_seconds: z.number().min(0).max(3600).nullable().optional(),
+  }),
+  z.object({
+    action: z.literal("delete_attempt_row"),
+    attempt_id: uuid,
+  }),
+  z.object({
     action: z.literal("update_calisthenics_entry"),
     entry_id: uuid,
     attempts: z.number().int().min(0).max(200).nullable(),
@@ -109,6 +132,7 @@ const Actions = z.discriminatedUnion("action", [
     controlled_ascent: z.boolean().nullable(),
     controlled_descent: z.boolean().nullable(),
     assistance_id: z.number().int().positive().nullable(),
+    quality_10: z.number().int().min(1).max(10).nullable().optional(),
   }),
   z.object({
     action: z.literal("delete_calisthenics_entry"),
@@ -442,6 +466,7 @@ export async function POST(request: Request) {
           .update({
             load_kg: input.load_kg,
             reps: input.reps,
+            rir: input.rir,
             updated_at: new Date().toISOString(),
           })
           .eq("id", input.set_id)
@@ -523,6 +548,67 @@ export async function POST(request: Request) {
         return NextResponse.json({ entry: data });
       }
 
+      case "log_attempt_row": {
+        // Appended at the end: the order attempts happened in is part of the
+        // record, and a success on the fifth try is not the same session as a
+        // success on the first.
+        const { data: last } = await db
+          .from("calisthenics_attempts")
+          .select("ordinal")
+          .eq("entry_id", input.entry_id)
+          .order("ordinal", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const { data, error } = await db
+          .from("calisthenics_attempts")
+          .insert({
+            entry_id: input.entry_id,
+            ordinal: (last?.ordinal ?? 0) + 1,
+            succeeded: input.succeeded,
+            hold_seconds: input.hold_seconds ?? null,
+            controlled_ascent: input.controlled_ascent ?? null,
+            controlled_descent: input.controlled_descent ?? null,
+            negative_seconds: input.negative_seconds ?? null,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        return NextResponse.json({ attempt: data });
+      }
+
+      case "update_attempt_row": {
+        const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (input.succeeded !== undefined) patch.succeeded = input.succeeded;
+        if (input.hold_seconds !== undefined) patch.hold_seconds = input.hold_seconds;
+        if (input.controlled_ascent !== undefined) {
+          patch.controlled_ascent = input.controlled_ascent;
+        }
+        if (input.controlled_descent !== undefined) {
+          patch.controlled_descent = input.controlled_descent;
+        }
+        if (input.negative_seconds !== undefined) {
+          patch.negative_seconds = input.negative_seconds;
+        }
+        const { data, error } = await db
+          .from("calisthenics_attempts")
+          .update(patch)
+          .eq("id", input.attempt_id)
+          .select()
+          .single();
+        if (error) throw error;
+        return NextResponse.json({ attempt: data });
+      }
+
+      case "delete_attempt_row": {
+        const { error } = await db
+          .from("calisthenics_attempts")
+          .delete()
+          .eq("id", input.attempt_id);
+        if (error) throw error;
+        return NextResponse.json({ deleted: input.attempt_id });
+      }
+
       case "update_calisthenics_entry": {
         if (
           input.attempts != null &&
@@ -550,6 +636,7 @@ export async function POST(request: Request) {
             controlled_ascent: input.controlled_ascent,
             controlled_descent: input.controlled_descent,
             assistance_id: input.assistance_id,
+            quality_10: input.quality_10 ?? null,
             updated_at: new Date().toISOString(),
           })
           .eq("id", input.entry_id)

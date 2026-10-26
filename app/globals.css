@@ -17,7 +17,9 @@
   --accent: #1f6feb;
   --accent-text: #ffffff;
 
-  --stood: #157f3d;
+  /* Darkened from #157f3d: as the Success button's label on --stood-bg it
+     measured 4.44, and 16px bold is not large text. */
+  --stood: #13763a;
   --stood-bg: #e3f4e8;
   --caught: #a86300;
   --caught-bg: #fdf0da;
