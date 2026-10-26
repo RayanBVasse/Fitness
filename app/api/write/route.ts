@@ -97,6 +97,16 @@ const Actions = z.discriminatedUnion("action", [
     notes: z.string().max(2000).nullable().optional(),
   }),
   z.object({
+    action: z.literal("update_calisthenics_entry"),
+    entry_id: uuid,
+    attempts: z.number().int().min(0).max(200).nullable(),
+    successful_attempts: z.number().int().min(0).max(200).nullable(),
+    best_hold_seconds: z.number().min(0).max(3600).nullable(),
+    controlled_ascent: z.boolean().nullable(),
+    controlled_descent: z.boolean().nullable(),
+    assistance_id: z.number().int().positive().nullable(),
+  }),
+  z.object({
     action: z.literal("delete_calisthenics_entry"),
     entry_id: uuid,
   }),
@@ -475,6 +485,52 @@ export async function POST(request: Request) {
           .select()
           .single();
         if (error) throw error;
+        return NextResponse.json({ entry: data });
+      }
+
+      case "update_calisthenics_entry": {
+        if (
+          input.attempts != null &&
+          input.successful_attempts != null &&
+          input.successful_attempts > input.attempts
+        ) {
+          return NextResponse.json(
+            { error: "Successes cannot exceed attempts." },
+            { status: 422 },
+          );
+        }
+
+        // Logged rows only, as with hypertrophy sets: the imported history is
+        // a reconstruction and has to stay recognisable as one.
+        //
+        // The skill variation itself is not editable. A banded handstand
+        // push-up corrected into a freestanding one is not a corrected
+        // record, it is a different skill wearing the first one's history.
+        const { data, error } = await db
+          .from("calisthenics_entries")
+          .update({
+            attempts: input.attempts,
+            successful_attempts: input.successful_attempts,
+            best_hold_seconds: input.best_hold_seconds,
+            controlled_ascent: input.controlled_ascent,
+            controlled_descent: input.controlled_descent,
+            assistance_id: input.assistance_id,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", input.entry_id)
+          .eq("provenance", "logged")
+          .select()
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) {
+          return NextResponse.json(
+            {
+              error:
+                "That entry came from the imported history, not from logging here, so it is not editable.",
+            },
+            { status: 409 },
+          );
+        }
         return NextResponse.json({ entry: data });
       }
 

@@ -22,6 +22,12 @@ import type {
  * Attempts are not carried forward from last time — last session's attempt
  * count is not a default for this one — but assistance is, because that
  * changes slowly.
+ *
+ * A logged entry is editable: tapping it reopens this same panel on that
+ * entry's own numbers. One panel rather than a second cramped editor, because
+ * an entry is six fields and a miscounted set of attempts is worth correcting
+ * rather than deleting. The skill variation stays fixed: changing it would
+ * hand one skill another's history.
  */
 
 type Props = {
@@ -59,6 +65,8 @@ export function CalisthenicsLogger({
     down: false,
   });
   const [showAll, setShowAll] = useState(false);
+  /** The logged entry being corrected, if the panel is open on one. */
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -70,6 +78,7 @@ export function CalisthenicsLogger({
 
   function choose(id: number) {
     setVariationId(id);
+    setEditingId(null);
     setShowAll(false);
     setAttempts(0);
     setSuccesses(0);
@@ -77,6 +86,27 @@ export function CalisthenicsLogger({
     setControlled({ up: false, down: false });
     const previous = lastSettings.find((s) => s.skill_variation_id === id);
     setAssistanceId(previous?.assistance_id ?? null);
+  }
+
+  /** Reopen the panel on a logged entry, at its own numbers. */
+  function openEntry(entry: CalisthenicsEntry) {
+    setError(null);
+    setEditingId(entry.id);
+    setVariationId(entry.skill_variation_id);
+    setShowAll(false);
+    setAttempts(entry.attempts ?? 0);
+    setSuccesses(entry.successful_attempts ?? 0);
+    setBestHold(entry.best_hold_seconds != null ? String(Number(entry.best_hold_seconds)) : "");
+    setAssistanceId(entry.assistance_id ?? null);
+    setControlled({
+      up: entry.controlled_ascent === true,
+      down: entry.controlled_descent === true,
+    });
+  }
+
+  function closePanel() {
+    setEditingId(null);
+    setVariationId(null);
   }
 
   function run(task: () => Promise<void>) {
@@ -93,21 +123,36 @@ export function CalisthenicsLogger({
 
   function save() {
     if (variationId === null) return;
+    // Zero attempts means the count was never taken, not that nothing was
+    // tried; it stays unrecorded rather than becoming a logged zero.
+    const shared = {
+      attempts: attempts || null,
+      successful_attempts: attempts ? successes : null,
+      best_hold_seconds: bestHold === "" ? null : Number(bestHold),
+      controlled_ascent: controlled.up ? true : null,
+      controlled_descent: controlled.down ? true : null,
+      assistance_id: assistanceId,
+    };
+    const correcting = editingId;
     run(async () => {
-      const result = await write<{ entry: CalisthenicsEntry }>({
-        action: "log_calisthenics_entry",
-        session_id: sessionId,
-        session_block_id: sessionBlockId,
-        skill_variation_id: variationId,
-        attempts: attempts || null,
-        successful_attempts: attempts ? successes : null,
-        best_hold_seconds: bestHold === "" ? null : Number(bestHold),
-        controlled_ascent: controlled.up ? true : null,
-        controlled_descent: controlled.down ? true : null,
-        assistance_id: assistanceId,
-      });
-      setEntries((prev) => [...prev, result.entry]);
-      setVariationId(null);
+      if (correcting) {
+        const result = await write<{ entry: CalisthenicsEntry }>({
+          action: "update_calisthenics_entry",
+          entry_id: correcting,
+          ...shared,
+        });
+        setEntries((prev) => prev.map((e) => (e.id === correcting ? result.entry : e)));
+      } else {
+        const result = await write<{ entry: CalisthenicsEntry }>({
+          action: "log_calisthenics_entry",
+          session_id: sessionId,
+          session_block_id: sessionBlockId,
+          skill_variation_id: variationId,
+          ...shared,
+        });
+        setEntries((prev) => [...prev, result.entry]);
+      }
+      closePanel();
     });
   }
 
@@ -115,6 +160,7 @@ export function CalisthenicsLogger({
     run(async () => {
       await write({ action: "delete_calisthenics_entry", entry_id: id });
       setEntries((prev) => prev.filter((e) => e.id !== id));
+      if (editingId === id) closePanel();
     });
   }
 
@@ -158,8 +204,21 @@ export function CalisthenicsLogger({
           className="rounded-[var(--radius)] border p-3"
           style={{ borderColor: "var(--accent)", background: "var(--surface-2)" }}
         >
-          <div className="text-[10px] uppercase tracking-wide text-text-faint">{skillName}</div>
-          <div className="font-semibold">{variation.name}</div>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-wide text-text-faint">
+                {editingId ? `Correcting · ${skillName}` : skillName}
+              </div>
+              <div className="truncate font-semibold">{variation.name}</div>
+            </div>
+            <button
+              type="button"
+              onClick={closePanel}
+              className="shrink-0 text-[11px] text-text-faint underline underline-offset-2"
+            >
+              {editingId ? "Cancel" : "Close"}
+            </button>
+          </div>
           {variation.criteria_notes ? (
             <p className="mt-1 text-[11px] leading-snug text-text-faint">
               {variation.criteria_notes}
@@ -250,40 +309,53 @@ export function CalisthenicsLogger({
             className="mt-3 min-h-[48px] w-full rounded-[var(--radius)] text-base font-bold disabled:opacity-40"
             style={{ background: "var(--accent)", color: "var(--accent-text)" }}
           >
-            Save entry
+            {editingId ? "Save changes" : "Save entry"}
           </button>
         </div>
       ) : null}
 
       {entries.length > 0 ? (
         <ul className="space-y-1.5">
-          {entries.map((entry) => (
-            <li
-              key={entry.id}
-              className="flex items-center gap-2 rounded-[var(--radius)] border border-border px-3 py-2"
-            >
-              <span className="min-w-0 flex-1 truncate text-sm">
-                {byId.get(entry.skill_variation_id)?.name ?? "Skill"}
-              </span>
-              <span className="tnum text-sm text-text-dim">
-                {entry.attempts != null
-                  ? `${entry.successful_attempts ?? 0}/${entry.attempts}`
-                  : "—"}
-                {entry.best_hold_seconds != null
-                  ? ` · ${Number(entry.best_hold_seconds)}s`
-                  : ""}
-              </span>
-              <button
-                type="button"
-                disabled={!canWrite || busy}
-                onClick={() => remove(entry.id)}
-                aria-label="Delete this entry"
-                className="min-h-[32px] px-1 text-sm text-text-faint disabled:opacity-40"
+          {entries.map((entry) => {
+            const name = byId.get(entry.skill_variation_id)?.name ?? "Skill";
+            return (
+              <li
+                key={entry.id}
+                className="flex items-center gap-1 rounded-[var(--radius)] border px-1 py-1"
+                style={{
+                  borderColor: editingId === entry.id ? "var(--accent)" : "var(--border)",
+                }}
               >
-                ×
-              </button>
-            </li>
-          ))}
+                {/* The row is the edit control, as the set tiles are. */}
+                <button
+                  type="button"
+                  disabled={!canWrite || busy}
+                  onClick={() => openEntry(entry)}
+                  aria-label={`Edit this entry of ${name}`}
+                  className="flex min-h-[36px] min-w-0 flex-1 items-center gap-2 px-2 text-left disabled:opacity-40"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
+                  <span className="tnum shrink-0 text-sm text-text-dim">
+                    {entry.attempts != null
+                      ? `${entry.successful_attempts ?? 0}/${entry.attempts}`
+                      : "—"}
+                    {entry.best_hold_seconds != null
+                      ? ` · ${Number(entry.best_hold_seconds)}s`
+                      : ""}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!canWrite || busy}
+                  onClick={() => remove(entry.id)}
+                  aria-label={`Delete this entry of ${name}`}
+                  className="min-h-[36px] shrink-0 px-2 text-sm text-text-faint disabled:opacity-40"
+                >
+                  ×
+                </button>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
 
