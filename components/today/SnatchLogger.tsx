@@ -4,7 +4,6 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { Pill, SectionTitle, wsColour } from "@/components/ui";
-import { londonTime } from "@/lib/time";
 import { OUTCOME_LABELS } from "@/lib/types";
 import type {
   FailureMode,
@@ -474,34 +473,81 @@ export function SnatchLogger({
                   background: isOpen ? "var(--surface-2)" : "transparent",
                 }}
               >
-                <div className="flex items-center gap-2">
+                {/* One line per load. The lifts themselves stand in for a
+                    tally, so the row says what happened rather than counting
+                    it. The clock is gone: the order is already the order they
+                    were done in, and a timestamp on every row was a column of
+                    noise. Open the block to see it. */}
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => setOpenBlockId(block.id)}
-                    className="flex flex-1 flex-wrap items-baseline gap-1.5 text-left"
+                    className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-left"
                   >
-                    <span className="tnum w-14 shrink-0 text-sm font-semibold">
-                      {trim(Number(block.weight_kg ?? 0))} kg
+                    <span className="tnum w-12 shrink-0 text-sm font-semibold">
+                      {trim(Number(block.weight_kg ?? 0))}
                     </span>
-                    <span className="tnum text-sm text-text-dim">
-                      {stood}/{total}
-                    </span>
-                    {caught > 0 ? <Pill tone="caught">{caught} caught</Pill> : null}
-                    {quality ? <Pill tone="accent">{quality}</Pill> : null}
+                    {lifts.length > 0 ? (
+                      lifts.map((a) => {
+                        const tone =
+                          a.outcome === "stood"
+                            ? "var(--stood)"
+                            : a.outcome === "received_not_stood"
+                              ? "var(--caught)"
+                              : "var(--missed)";
+                        return (
+                          <span
+                            key={a.id}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Lift ${a.ordinal}, ${OUTCOME_LABELS[a.outcome]}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDetailId(detailId === a.id ? null : a.id);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setDetailId(detailId === a.id ? null : a.id);
+                              }
+                            }}
+                            className="tnum flex h-7 min-w-[24px] items-center justify-center gap-0.5 rounded border px-1 text-[11px] font-bold"
+                            style={{
+                              borderColor: tone,
+                              color: tone,
+                              background:
+                                detailId === a.id ? "var(--surface)" : "transparent",
+                            }}
+                          >
+                            {a.outcome === "stood" ? "✓" : a.outcome === "received_not_stood" ? "◎" : "✕"}
+                            {a.quality_10 != null ? (
+                              <span className="font-normal">{a.quality_10}</span>
+                            ) : null}
+                          </span>
+                        );
+                      })
+                    ) : (
+                      /* No individual lifts: the imported history keeps its
+                         totals this way, and they are not invented into
+                         marks that were never recorded. */
+                      <span className="tnum shrink-0 text-sm text-text-dim">
+                        {block.attempts ? `${stood}/${total} total` : "nothing logged"}
+                      </span>
+                    )}
+                    {caught > 0 && lifts.length === 0 ? (
+                      <Pill tone="caught">{caught} caught</Pill>
+                    ) : null}
+                    {quality && lifts.length === 0 ? <Pill tone="accent">{quality}</Pill> : null}
                     {block.straps ? <Pill>straps</Pill> : null}
-                    {block.is_warmup ? <Pill>warm-up</Pill> : null}
-                    {/* Always shown, not only when it fails to count. Which
-                        variation a block was is the thing that used to make
-                        two identical-looking rows refuse to merge. */}
-                    {variation ? (
+                    {/* Only when it is not the ordinary case. A full snatch is
+                        the default, and saying so on every row is noise — but
+                        a variation that differs is exactly what made two
+                        identical-looking rows refuse to merge. */}
+                    {variation && variation.slug !== "full_snatch" ? (
                       <Pill tone={variation.counts_as_full_lift ? "neutral" : "caught"}>
                         {variation.name}
                       </Pill>
-                    ) : null}
-                    {block.logged_at ? (
-                      <span className="ml-auto text-[10px] text-text-dim">
-                        {londonTime(block.logged_at)}
-                      </span>
                     ) : null}
                   </button>
                   <button
@@ -511,51 +557,11 @@ export function SnatchLogger({
                     aria-label={`Delete the whole ${trim(
                       Number(block.weight_kg ?? 0),
                     )} kg block and its ${lifts.length} lifts`}
-                    className="min-h-[30px] px-1 text-sm text-text-dim disabled:opacity-40"
+                    className="min-h-[30px] shrink-0 px-1 text-sm text-text-dim disabled:opacity-40"
                   >
                     ×
                   </button>
                 </div>
-
-                {/* Each lift, in order. Tap one to correct it. */}
-                {lifts.length > 0 ? (
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                    {lifts.map((a) => {
-                      const tone =
-                        a.outcome === "stood"
-                          ? "var(--stood)"
-                          : a.outcome === "received_not_stood"
-                            ? "var(--caught)"
-                            : "var(--missed)";
-                      return (
-                        <button
-                          key={a.id}
-                          type="button"
-                          onClick={() => setDetailId(detailId === a.id ? null : a.id)}
-                          aria-label={`Lift ${a.ordinal}, ${OUTCOME_LABELS[a.outcome]}`}
-                          className="tnum flex h-8 min-w-[32px] items-center justify-center gap-0.5 rounded-md border px-1.5 text-[11px] font-bold"
-                          style={{
-                            borderColor: tone,
-                            color: tone,
-                            background:
-                              detailId === a.id ? "var(--surface)" : "transparent",
-                          }}
-                        >
-                          {a.ordinal}
-                          {a.quality_10 != null ? (
-                            <span className="font-normal">Q{a.quality_10}</span>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="mt-1 text-[10px] text-text-dim">
-                    {block.attempts
-                      ? "Recorded as a block total, without individual lifts."
-                      : "Opened, nothing logged yet."}
-                  </p>
-                )}
 
                 {detailId && lifts.some((a) => a.id === detailId) ? (
                   <AttemptDetail

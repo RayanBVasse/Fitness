@@ -169,28 +169,6 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
       .limit(1),
   );
 
-  const snatchAttemptsResult = await safeRead<SnatchAttempt[]>((c) =>
-    c
-      .from("snatch_attempts")
-      .select<string, SnatchAttempt>("*")
-      .in(
-        "block_id",
-        (snatchBlocks.data ?? []).map((b) => b.id),
-      )
-      .order("ordinal"),
-  );
-
-  const attemptsResult = await safeRead<CalisthenicsAttempt[]>((c) =>
-    c
-      .from("calisthenics_attempts")
-      .select<string, CalisthenicsAttempt>("*")
-      .in(
-        "entry_id",
-        (calisthenicsEntries.data ?? []).map((e) => e.id),
-      )
-      .order("ordinal"),
-  );
-
   const notesResult = await safeRead<ContextNote[]>((c) =>
     c
       .from("context_notes")
@@ -269,6 +247,34 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     ),
   ]);
 
+  // These two read the rows behind every snatch and calisthenics figure, so
+  // they have to run AFTER the blocks and entries they filter by. They were
+  // written above that destructure and threw a ReferenceError on every
+  // request; safeRead caught it and returned an empty list, so the attempts
+  // simply never appeared and nothing said why. Their errors are surfaced
+  // below for the same reason.
+  const snatchAttemptsResult = await safeRead<SnatchAttempt[]>((c) =>
+    c
+      .from("snatch_attempts")
+      .select<string, SnatchAttempt>("*")
+      .in(
+        "block_id",
+        (snatchBlocks.data ?? []).map((b) => b.id),
+      )
+      .order("ordinal"),
+  );
+
+  const attemptsResult = await safeRead<CalisthenicsAttempt[]>((c) =>
+    c
+      .from("calisthenics_attempts")
+      .select<string, CalisthenicsAttempt>("*")
+      .in(
+        "entry_id",
+        (calisthenicsEntries.data ?? []).map((e) => e.id),
+      )
+      .order("ordinal"),
+  );
+
   const blockIds = (snatchBlocks.data ?? []).map((b) => b.id);
   const attempts = blockIds.length
     ? await safeRead<SnatchAttempt[]>((c) =>
@@ -295,7 +301,12 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     recentSkillVariationIds: (recentSkills.data ?? []).map((r) => r.skill_variation_id),
     attempts: attempts.data ?? [],
     lastSession: lastSessionResult.data?.[0] ?? null,
-    error: sessionResult.error ?? blocks.error ?? snatchBlocks.error,
+    error:
+      sessionResult.error ??
+      blocks.error ??
+      snatchBlocks.error ??
+      snatchAttemptsResult.error ??
+      attemptsResult.error,
   };
 }
 
