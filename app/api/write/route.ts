@@ -406,7 +406,9 @@ export async function POST(request: Request) {
           .from("hypertrophy_sets")
           .insert({
             session_id: input.session_id,
-            session_block_id: input.session_block_id ?? null,
+            session_block_id:
+              input.session_block_id ??
+              (await ensureBlock(db, input.session_id, "hypertrophy")),
             exercise_id: input.exercise_id,
             machine_label: input.machine_label ?? null,
             load_kg: input.load_kg ?? null,
@@ -455,9 +457,15 @@ export async function POST(request: Request) {
       }
 
       case "delete_hypertrophy_set": {
+        const { data: owner } = await db
+          .from("hypertrophy_sets")
+          .select("session_id")
+          .eq("id", input.set_id)
+          .maybeSingle();
         // Drops hang off their parent and go with it; the cascade handles that.
         const { error } = await db.from("hypertrophy_sets").delete().eq("id", input.set_id);
         if (error) throw error;
+        if (owner) await pruneEmptyBlock(db, owner.session_id, "hypertrophy");
         return NextResponse.json({ deleted: input.set_id });
       }
 
@@ -487,7 +495,9 @@ export async function POST(request: Request) {
           .from("calisthenics_entries")
           .insert({
             session_id: input.session_id,
-            session_block_id: input.session_block_id ?? null,
+            session_block_id:
+              input.session_block_id ??
+              (await ensureBlock(db, input.session_id, "calisthenics")),
             skill_variation_id: input.skill_variation_id,
             sets_count: input.sets_count ?? null,
             reps_per_set: input.reps_per_set ?? null,
@@ -555,11 +565,17 @@ export async function POST(request: Request) {
       }
 
       case "delete_calisthenics_entry": {
+        const { data: owner } = await db
+          .from("calisthenics_entries")
+          .select("session_id")
+          .eq("id", input.entry_id)
+          .maybeSingle();
         const { error } = await db
           .from("calisthenics_entries")
           .delete()
           .eq("id", input.entry_id);
         if (error) throw error;
+        if (owner) await pruneEmptyBlock(db, owner.session_id, "calisthenics");
         return NextResponse.json({ deleted: input.entry_id });
       }
 
@@ -766,7 +782,8 @@ export async function POST(request: Request) {
           .from("snatch_blocks")
           .insert({
             session_id: input.session_id,
-            session_block_id: input.session_block_id ?? null,
+            session_block_id:
+              input.session_block_id ?? (await ensureBlock(db, input.session_id, "snatch")),
             weight_kg: input.weight_kg,
             variation_id: input.variation_id,
             straps: input.straps ?? null,
@@ -860,11 +877,17 @@ export async function POST(request: Request) {
       }
 
       case "delete_weight_block": {
+        const { data: owner } = await db
+          .from("snatch_blocks")
+          .select("session_id")
+          .eq("id", input.weight_block_id)
+          .maybeSingle();
         const { error } = await db
           .from("snatch_blocks")
           .delete()
           .eq("id", input.weight_block_id);
         if (error) throw error;
+        if (owner) await pruneEmptyBlock(db, owner.session_id, "snatch");
         return NextResponse.json({ deleted: input.weight_block_id });
       }
     }
@@ -883,4 +906,84 @@ async function sha256(value: string): Promise<string> {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
   return `sha256:${hex}`;
+}
+
+/**
+ * A workstream block, created the first time something is actually recorded
+ * into that workstream.
+ *
+ * A block is the assertion that a workstream happened: `v_session_summary`
+ * derives its `workstreams` array from these rows, and the Coach reads that
+ * to judge weekday themes. So opening a tab must not create one, or a glance
+ * at all three would make every session claim all three. The first set, lift
+ * or skill entry is the evidence; this is where the block earns its place.
+ */
+async function ensureBlock(
+  db: ReturnType<typeof adminClient>,
+  sessionId: string,
+  workstream: "snatch" | "calisthenics" | "hypertrophy",
+): Promise<string> {
+  const { data: existing, error } = await db
+    .from("session_blocks")
+    .select("id")
+    .eq("session_id", sessionId)
+    .eq("workstream", workstream)
+    .order("sort_order")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (existing) return existing.id as string;
+
+  const { count } = await db
+    .from("session_blocks")
+    .select("id", { count: "exact", head: true })
+    .eq("session_id", sessionId);
+
+  const { data, error: insertError } = await db
+    .from("session_blocks")
+    .insert({
+      session_id: sessionId,
+      workstream,
+      started_at: new Date().toISOString(),
+      sort_order: ((count ?? 0) + 1) * 10,
+    })
+    .select("id")
+    .single();
+  if (insertError) throw insertError;
+  return data.id as string;
+}
+
+const WORKSTREAM_RECORDS = {
+  snatch: "snatch_blocks",
+  hypertrophy: "hypertrophy_sets",
+  calisthenics: "calisthenics_entries",
+} as const;
+
+/**
+ * The mirror of `ensureBlock`: once the last record in a workstream is gone,
+ * the block it created goes too. Without this, deleting your only set would
+ * leave the session still claiming a hypertrophy block, and the workstream
+ * counts would drift upward over time through a different door.
+ *
+ * A block carrying its own note is left alone — that note is a record of
+ * something, even if the measurements were removed.
+ */
+async function pruneEmptyBlock(
+  db: ReturnType<typeof adminClient>,
+  sessionId: string,
+  workstream: keyof typeof WORKSTREAM_RECORDS,
+): Promise<void> {
+  const { count, error } = await db
+    .from(WORKSTREAM_RECORDS[workstream])
+    .select("id", { count: "exact", head: true })
+    .eq("session_id", sessionId);
+  if (error) throw error;
+  if ((count ?? 0) > 0) return;
+
+  await db
+    .from("session_blocks")
+    .delete()
+    .eq("session_id", sessionId)
+    .eq("workstream", workstream)
+    .is("notes", null);
 }

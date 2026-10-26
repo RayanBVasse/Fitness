@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { SnatchLogger } from "@/components/today/SnatchLogger";
@@ -8,6 +8,7 @@ import { DailyCheckIn } from "@/components/today/DailyCheckIn";
 import { HypertrophyLogger } from "@/components/today/HypertrophyLogger";
 import { CalisthenicsLogger } from "@/components/today/CalisthenicsLogger";
 import { DayNotes } from "@/components/today/DayNotes";
+import { DayPerformance } from "@/components/today/DayPerformance";
 import { Card, Chip, Pill, SectionTitle, wsColour } from "@/components/ui";
 import { isoWeekday, londonTime, longDate, weekdayName, daysBetween } from "@/lib/time";
 import {
@@ -68,7 +69,8 @@ type Props = {
   weekdayThemes: WeekdayThemes;
 };
 
-const WORKSTREAMS: Workstream[] = ["snatch", "calisthenics", "hypertrophy"];
+const WORKSTREAMS: Workstream[] = ["snatch", "hypertrophy", "calisthenics"];
+const TAB_KEY = "fitness.workstream-tab";
 
 /**
  * A logger card wears its workstream: a bar across the top and a tinted
@@ -126,6 +128,41 @@ export function TodayScreen({
   // Most days have one visit. When there are two, the latest is the one being
   // logged into, and the other stays reachable rather than hidden.
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [tab, setTab] = useState<Workstream>("snatch");
+
+  // Which tab you were on, remembered per browser. It is a view preference,
+  // not a fact about training, so it has no business in Postgres.
+  useEffect(() => {
+    const stored = (() => {
+      try {
+        return window.localStorage.getItem(TAB_KEY);
+      } catch {
+        // Private window, blocked storage: fall through to the suggestion.
+        return null;
+      }
+    })();
+    const remembered =
+      stored && (WORKSTREAMS as string[]).includes(stored) ? (stored as Workstream) : null;
+    // Nothing remembered: the weekday's stated focus, else what the last
+    // visit contained. A preference about what to show, never a block.
+    const next = remembered ?? theme?.focus ?? lastSession?.workstreams?.[0] ?? null;
+    // Browser storage cannot be read during render without a hydration
+    // mismatch, since the server has no access to it. An effect is the only
+    // place this can happen, which is what the rule below is about.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (next) setTab(next);
+    // Deliberately once, on mount: after that the tab is yours.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function chooseTab(next: Workstream) {
+    setTab(next);
+    try {
+      window.localStorage.setItem(TAB_KEY, next);
+    } catch {
+      /* nothing to do: the tab simply will not be remembered */
+    }
+  }
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -147,6 +184,26 @@ export function TodayScreen({
   const sessionSnatchBlocks = snatchBlocks.filter((b) => b.session_id === session?.id);
   const sessionHypertrophy = hypertrophySets.filter((h) => h.session_id === session?.id);
   const sessionCalisthenics = calisthenicsEntries.filter((c) => c.session_id === session?.id);
+
+  /** What each tab has to show for itself. Nothing recorded reads as a dash,
+   *  not a zero: zero sets is a measurement, and this is an absence. */
+  function tabTotal(workstream: Workstream): string {
+    if (workstream === "snatch") {
+      const lifts = sessionSnatchBlocks.reduce(
+        (total, b) => total + Number(b.attempts ?? 0),
+        0,
+      );
+      // "Attempts", not "lifts": this counts pulls and bottom stands too, and
+      // those are not snatches. The footer's success rate excludes them.
+      return lifts > 0 ? `${lifts} attempt${lifts === 1 ? "" : "s"}` : "—";
+    }
+    if (workstream === "hypertrophy") {
+      const n = sessionHypertrophy.length;
+      return n > 0 ? `${n} set${n === 1 ? "" : "s"}` : "—";
+    }
+    const n = sessionCalisthenics.length;
+    return n > 0 ? `${n} skill${n === 1 ? "" : "s"}` : "—";
+  }
 
   const snatchBlock = sessionBlocks.find((b) => b.workstream === "snatch") ?? null;
   const hypertrophyBlock = sessionBlocks.find((b) => b.workstream === "hypertrophy") ?? null;
@@ -270,7 +327,7 @@ export function TodayScreen({
                 disabled={!canWrite || busy}
                 onClick={() =>
                   run(async () => {
-                    const created = await write<{ session: Session }>({
+                    await write<{ session: Session }>({
                       action: "start_session",
                       gym_id: lastSession.gym
                         ? (gyms.find((g) => g.name === lastSession.gym)?.id ?? null)
@@ -278,15 +335,11 @@ export function TodayScreen({
                       session_date: date,
                       started_at: new Date().toISOString(),
                     });
-                    // Recreate the same workstream blocks, so a repeat visit is
-                    // one tap rather than three.
-                    for (const workstream of lastSession.workstreams ?? []) {
-                      await write({
-                        action: "add_block",
-                        session_id: created.session.id,
-                        workstream,
-                      });
-                    }
+                    // The gym and the tab you land on, not the blocks. Copying
+                    // blocks would make today claim yesterday's workstreams
+                    // before anything had been recorded.
+                    const first = lastSession.workstreams?.[0];
+                    if (first) chooseTab(first);
                   })
                 }
                 className="min-h-[48px] w-full rounded-[var(--radius)] border border-border text-sm font-semibold disabled:opacity-40"
@@ -371,112 +424,128 @@ export function TodayScreen({
               </div>
             ) : null}
 
-            <div className="mt-4">
-              <SectionTitle>Workstreams this visit</SectionTitle>
-              <div className="flex flex-wrap gap-2">
-                {WORKSTREAMS.map((workstream) => {
-                  const existing = sessionBlocks.find((b) => b.workstream === workstream);
-                  return (
-                    <Chip
-                      key={workstream}
-                      on={Boolean(existing)}
-                      hue={wsColour(workstream)}
-                      className="disabled:!opacity-100"
-                      disabled={!canWrite || busy || Boolean(existing)}
-                      onClick={() =>
-                        run(async () => {
-                          await write({
-                            action: "add_block",
-                            session_id: session.id,
-                            workstream,
-                          });
-                        })
-                      }
-                    >
-                      {existing ? "" : "+ "}
-                      {WORKSTREAM_LABELS[workstream]}
-                    </Chip>
-                  );
-                })}
-              </div>
-              <p className="mt-2 text-[11px] text-text-faint">
-                One visit, several disciplines.
-              </p>
-            </div>
-
           </Card>
 
-          <Card style={workstreamCard("snatch")}>
-            {/* Keyed on the session: the logger seeds its state from these
-                blocks on mount, so switching visits must remount it rather
-                than leave the previous visit's blocks on screen. */}
-            <SnatchLogger
-              key={session.id}
-              sessionId={session.id}
-              sessionBlockId={snatchBlock?.id ?? null}
-              presets={presets}
-              variations={variations}
-              ladder={ladder}
-              initialBlocks={sessionSnatchBlocks}
-              canWrite={canWrite}
-            />
-            <div className="mt-3">
-              <DayNotes
-                date={date}
+          {/* One work area, three tabs. Selecting a tab records nothing: the
+              block for a workstream is created by its first set, lift or
+              skill entry, server-side. The inactive panels stay mounted and
+              are merely hidden, so a half-typed entry survives a switch. */}
+          <Card style={workstreamCard(tab)}>
+            <div
+              role="tablist"
+              aria-label="Workstream"
+              className="mb-3 flex gap-1 rounded-[var(--radius)] p-1"
+              style={{ background: "var(--surface-2)" }}
+            >
+              {WORKSTREAMS.map((workstream) => {
+                const on = tab === workstream;
+                const hue = wsColour(workstream);
+                return (
+                  <button
+                    key={workstream}
+                    type="button"
+                    role="tab"
+                    aria-selected={on}
+                    onClick={() => chooseTab(workstream)}
+                    className="min-h-[44px] flex-1 rounded-[calc(var(--radius)-4px)] px-1 text-xs font-bold"
+                    style={{
+                      background: on ? "var(--surface)" : "transparent",
+                      color: on ? hue : "var(--text-dim)",
+                      boxShadow: on ? `inset 0 -2px 0 ${hue}` : undefined,
+                    }}
+                  >
+                    <span className="block truncate">{WORKSTREAM_LABELS[workstream]}</span>
+                    <span className="tnum block text-[10px] font-normal text-text-dim">
+                      {tabTotal(workstream)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ display: tab === "snatch" ? undefined : "none" }}>
+              {/* Keyed on the session: the logger seeds its state from these
+                  blocks on mount, so switching visits must remount it rather
+                  than leave the previous visit's blocks on screen. */}
+              <SnatchLogger
+                key={session.id}
                 sessionId={session.id}
-                workstream="snatch"
-                notes={notes}
+                sessionBlockId={snatchBlock?.id ?? null}
+                presets={presets}
+                variations={variations}
+                ladder={ladder}
+                initialBlocks={sessionSnatchBlocks}
                 canWrite={canWrite}
               />
+              <div className="mt-3">
+                <DayNotes
+                  date={date}
+                  sessionId={session.id}
+                  workstream="snatch"
+                  notes={notes}
+                  canWrite={canWrite}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: tab === "hypertrophy" ? undefined : "none" }}>
+              <HypertrophyLogger
+                key={`h-${session.id}`}
+                sessionId={session.id}
+                sessionBlockId={hypertrophyBlock?.id ?? null}
+                gymId={session.gym_id}
+                exercises={exercises}
+                muscleGroups={muscleGroups}
+                recentExerciseIds={recentExerciseIds}
+                lastSettings={lastExerciseSettings}
+                initialSets={sessionHypertrophy}
+                canWrite={canWrite}
+              />
+              <div className="mt-3">
+                <DayNotes
+                  date={date}
+                  sessionId={session.id}
+                  workstream="hypertrophy"
+                  notes={notes}
+                  canWrite={canWrite}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: tab === "calisthenics" ? undefined : "none" }}>
+              <CalisthenicsLogger
+                key={`c-${session.id}`}
+                sessionId={session.id}
+                sessionBlockId={calisthenicsBlock?.id ?? null}
+                skills={skills}
+                variations={skillVariations}
+                assistanceTypes={assistanceTypes}
+                recentVariationIds={recentSkillVariationIds}
+                lastSettings={lastSkillSettings}
+                initialEntries={sessionCalisthenics}
+                canWrite={canWrite}
+              />
+              <div className="mt-3">
+                <DayNotes
+                  date={date}
+                  sessionId={session.id}
+                  workstream="calisthenics"
+                  notes={notes}
+                  canWrite={canWrite}
+                />
+              </div>
             </div>
           </Card>
 
-          <Card style={workstreamCard("hypertrophy")}>
-            <HypertrophyLogger
-              key={`h-${session.id}`}
-              sessionId={session.id}
-              sessionBlockId={hypertrophyBlock?.id ?? null}
-              gymId={session.gym_id}
+          <Card>
+            <DayPerformance
+              snatchBlocks={sessionSnatchBlocks}
+              hypertrophySets={sessionHypertrophy}
+              calisthenicsEntries={sessionCalisthenics}
+              variations={variations}
               exercises={exercises}
               muscleGroups={muscleGroups}
-              recentExerciseIds={recentExerciseIds}
-              lastSettings={lastExerciseSettings}
-              initialSets={sessionHypertrophy}
-              canWrite={canWrite}
             />
-            <div className="mt-3">
-              <DayNotes
-                date={date}
-                sessionId={session.id}
-                workstream="hypertrophy"
-                notes={notes}
-                canWrite={canWrite}
-              />
-            </div>
-          </Card>
-
-          <Card style={workstreamCard("calisthenics")}>
-            <CalisthenicsLogger
-              key={`c-${session.id}`}
-              sessionId={session.id}
-              sessionBlockId={calisthenicsBlock?.id ?? null}
-              skills={skills}
-              variations={skillVariations}
-              assistanceTypes={assistanceTypes}
-              recentVariationIds={recentSkillVariationIds}
-              lastSettings={lastSkillSettings}
-              initialEntries={sessionCalisthenics}
-              canWrite={canWrite}
-            />
-            <div className="mt-3">
-              <DayNotes
-                date={date}
-                sessionId={session.id}
-                workstream="calisthenics"
-                notes={notes}
-                canWrite={canWrite}
-              />
-            </div>
           </Card>
         </>
       )}
