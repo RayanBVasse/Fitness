@@ -14,7 +14,6 @@ import {
   type AssistanceType,
   type CalisthenicsEntry,
   type Exercise,
-  type FailureMode,
   type Gym,
   type HypertrophySet,
   type LastExerciseSetting,
@@ -60,7 +59,6 @@ type Props = {
   gyms: Gym[];
   presets: WeightPreset[];
   variations: SnatchVariation[];
-  failureModes: FailureMode[];
   ladder: WarmupLadder | null;
   objective: SnatchObjective | null;
 };
@@ -91,7 +89,6 @@ export function TodayScreen({
   gyms,
   presets,
   variations,
-  failureModes,
   ladder,
   objective,
 }: Props) {
@@ -203,7 +200,7 @@ export function TodayScreen({
                     type="button"
                     onClick={() => setGymId(gym.id === gymId ? null : gym.id)}
                     aria-pressed={gymId === gym.id}
-                    className="min-h-[48px] rounded-[var(--radius)] border px-3 text-sm font-semibold"
+                    className="min-h-[42px] rounded-[var(--radius)] border px-2 text-sm font-semibold"
                     style={{
                       borderColor: gymId === gym.id ? "var(--accent)" : "var(--border)",
                       color: gymId === gym.id ? "var(--accent)" : "var(--text)",
@@ -296,7 +293,7 @@ export function TodayScreen({
               <div className="mb-1.5 text-[11px] uppercase tracking-wide text-text-faint">
                 Gym
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {gyms.map((gym) => {
                   const on = session.gym_id === gym.id;
                   return (
@@ -314,7 +311,7 @@ export function TodayScreen({
                         })
                       }
                       aria-pressed={on}
-                      className="min-h-[44px] rounded-[var(--radius)] border px-2 text-sm font-semibold disabled:opacity-40"
+                      className="min-h-[38px] rounded-full border px-3 text-xs font-semibold disabled:opacity-40"
                       style={{
                         borderColor: on ? "var(--accent)" : "var(--border)",
                         color: on ? "var(--accent)" : "var(--text-dim)",
@@ -368,7 +365,7 @@ export function TodayScreen({
                           });
                         })
                       }
-                      className="min-h-[44px] rounded-[var(--radius)] border px-3 text-sm font-semibold disabled:opacity-100"
+                      className="min-h-[38px] rounded-full border px-3 text-xs font-semibold disabled:opacity-100"
                       style={{
                         borderColor: existing ? "var(--accent)" : "var(--border)",
                         color: existing ? "var(--accent)" : "var(--text-dim)",
@@ -398,7 +395,6 @@ export function TodayScreen({
               sessionBlockId={snatchBlock?.id ?? null}
               presets={presets}
               variations={variations}
-              failureModes={failureModes}
               ladder={ladder}
               initialBlocks={sessionSnatchBlocks}
               canWrite={canWrite}

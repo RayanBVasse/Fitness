@@ -40,7 +40,6 @@ export default async function TodayPage() {
       gyms={reference.gyms}
       presets={reference.presets}
       variations={reference.variations}
-      failureModes={reference.failureModes}
       ladder={reference.ladder}
       objective={reference.objective}
     />

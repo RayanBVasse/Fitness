@@ -6,7 +6,6 @@ import { write } from "@/lib/write";
 import { Pill, SectionTitle } from "@/components/ui";
 import { londonTime } from "@/lib/time";
 import type {
-  FailureMode,
   SnatchBlock,
   SnatchOutcome,
   SnatchVariation,
@@ -30,7 +29,6 @@ type Props = {
   sessionBlockId: string | null;
   presets: WeightPreset[];
   variations: SnatchVariation[];
-  failureModes: FailureMode[];
   ladder: WarmupLadder | null;
   initialBlocks: SnatchBlock[];
   canWrite: boolean;
@@ -47,7 +45,6 @@ export function SnatchLogger({
   sessionBlockId,
   presets,
   variations,
-  failureModes,
   ladder,
   initialBlocks,
   canWrite,
@@ -162,6 +159,60 @@ export function SnatchLogger({
     });
   }
 
+  /**
+   * Consecutive blocks at the same load, variation and strap setting read as
+   * one line. Quality shows as a range when the blocks disagree, because
+   * averaging a technical judgement would invent a score nobody gave.
+   */
+  const collapsed = useMemo(() => {
+    const out: {
+      key: string;
+      ids: string[];
+      last: SnatchBlock;
+      attempts: number;
+      stood: number;
+      caught: number;
+      quality: string | null;
+    }[] = [];
+    for (const block of blocks) {
+      const previous = out.at(-1);
+      const matches =
+        previous &&
+        Number(previous.last.weight_kg) === Number(block.weight_kg) &&
+        previous.last.variation_id === block.variation_id &&
+        previous.last.straps === block.straps;
+      if (previous && matches) {
+        previous.ids.push(block.id);
+        previous.last = block;
+        previous.attempts += block.attempts ?? 0;
+        previous.stood += block.full_stand_successes ?? 0;
+        previous.caught += block.received_not_stood ?? 0;
+      } else {
+        out.push({
+          key: block.id,
+          ids: [block.id],
+          last: block,
+          attempts: block.attempts ?? 0,
+          stood: block.full_stand_successes ?? 0,
+          caught: block.received_not_stood ?? 0,
+          quality: null,
+        });
+      }
+    }
+    for (const group of out) {
+      const scores = group.ids
+        .map((id) => blocks.find((b) => b.id === id)?.quality_10)
+        .filter((q): q is number => typeof q === "number");
+      group.quality =
+        scores.length === 0
+          ? null
+          : Math.min(...scores) === Math.max(...scores)
+            ? `Q${Math.min(...scores)}`
+            : `Q${Math.min(...scores)}-${Math.max(...scores)}`;
+    }
+    return out;
+  }, [blocks]);
+
   const ladderWeights = ladder
     ? [...ladder.warmup.map((w) => w.weight_kg), ...ladder.working]
     : [];
@@ -242,7 +293,7 @@ export function SnatchLogger({
         </div>
 
         {/* Load presets. One tap opens a block at that weight. */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-5 gap-1.5">
           {presets.map((preset) => {
             const weight = Number(preset.weight_kg);
             const inLadder = ladderWeights.includes(weight);
@@ -252,7 +303,7 @@ export function SnatchLogger({
                 type="button"
                 disabled={!canWrite || busy}
                 onClick={() => openWeight(weight)}
-                className="tnum min-h-[48px] rounded-[var(--radius)] border text-base font-semibold disabled:opacity-40"
+                className="tnum min-h-[44px] rounded-[var(--radius)] border text-sm font-semibold disabled:opacity-40"
                 style={{
                   borderColor: inLadder ? "var(--accent)" : "var(--border)",
                   background: "var(--surface-2)",
@@ -274,21 +325,20 @@ export function SnatchLogger({
           </button>
         ) : null}
 
-        <p className="mt-2 text-[11px] text-text-faint">
-          Outlined loads are your usual ladder. Opening a load starts a block; each tap below
-          records one attempt at it. The ladder opens the blocks only — outcomes are always
-          yours to tap.
+        <p className="mt-1.5 text-[10px] leading-snug text-text-faint">
+          Outlined loads are your usual ladder. The ladder opens blocks only — outcomes are
+          always yours to tap.
         </p>
       </div>
 
       {/* The open block: the rapid-tap surface. */}
       {openBlock ? (
         <div
-          className="rounded-[var(--radius)] border p-3"
+          className="rounded-[var(--radius)] border p-2.5"
           style={{ borderColor: "var(--accent)", background: "var(--surface-2)" }}
         >
-          <div className="mb-3 flex items-baseline justify-between">
-            <div className="tnum text-2xl font-bold">
+          <div className="mb-2 flex items-baseline justify-between">
+            <div className="tnum text-xl font-bold">
               {trim(Number(openBlock.weight_kg ?? 0))} kg
             </div>
             <div className="tnum text-sm text-text-dim">
@@ -296,27 +346,27 @@ export function SnatchLogger({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-1.5">
             {OUTCOMES.map(({ outcome, label, sub, tone }) => (
               <button
                 key={outcome}
                 type="button"
                 disabled={!canWrite || busy}
                 onClick={() => logAttempt(outcome)}
-                className="flex min-h-[72px] flex-col items-center justify-center rounded-[var(--radius)] font-bold disabled:opacity-40"
+                className="flex min-h-[56px] flex-col items-center justify-center rounded-[var(--radius)] font-bold disabled:opacity-40"
                 style={{
                   background: `var(--${tone}-bg)`,
                   color: `var(--${tone})`,
                   border: `1px solid var(--${tone})`,
                 }}
               >
-                <span className="text-base leading-tight">{label}</span>
-                <span className="text-[10px] font-medium opacity-80">{sub}</span>
+                <span className="text-sm leading-none">{label}</span>
+                <span className="mt-0.5 text-[9px] font-medium leading-none opacity-75">{sub}</span>
               </button>
             ))}
           </div>
 
-          <div className="mt-3 flex items-center justify-between gap-2">
+          <div className="mt-2 flex items-center justify-between gap-2">
             <div className="flex gap-1.5">
               <Pill tone="stood">{openBlock.full_stand_successes ?? 0} stood</Pill>
               <Pill tone="caught">{openBlock.received_not_stood ?? 0} caught</Pill>
@@ -342,8 +392,8 @@ export function SnatchLogger({
 
           {/* Technical quality is recorded separately from load outcome. A lift
               that was stood is not therefore a good lift. */}
-          <div className="mt-3">
-            <div className="mb-1 text-[11px] uppercase tracking-wide text-text-faint">
+          <div className="mt-2">
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-text-faint">
               Technical quality {openBlock.quality_10 ? `· ${openBlock.quality_10}/10` : "· not rated"}
             </div>
             <div className="flex gap-1">
@@ -354,7 +404,7 @@ export function SnatchLogger({
                   disabled={!canWrite || busy}
                   onClick={() => rate(openBlock.id, n)}
                   aria-label={`Quality ${n} of 10`}
-                  className="tnum h-9 flex-1 rounded-md border text-xs font-semibold disabled:opacity-40"
+                  className="tnum h-8 flex-1 rounded-md border text-[11px] font-semibold disabled:opacity-40"
                   style={{
                     borderColor:
                       openBlock.quality_10 === n ? "var(--accent)" : "var(--border)",
@@ -375,39 +425,44 @@ export function SnatchLogger({
         </p>
       ) : null}
 
-      {/* Blocks logged in this session. */}
+      {/* Blocks logged in this session, with repeats of the same load folded
+          into one line: five rows of "35 kg 1/1" is one fact written five
+          times. */}
       {blocks.length ? (
-        <div className="space-y-1.5">
-          {blocks.map((block) => {
-            const isOpen = block.id === openBlockId;
+        <div className="space-y-1">
+          {collapsed.map((group) => {
+            const block = group.last;
+            const isOpen = group.ids.includes(openBlockId ?? "");
             const variation = variations.find((v) => v.id === block.variation_id);
             return (
               <div
-                key={block.id}
-                className="flex items-center gap-2 rounded-[var(--radius)] border border-border px-3 py-2"
+                key={group.key}
+                className="flex items-center gap-2 rounded-[var(--radius)] border border-border px-2.5 py-1.5"
                 style={{ background: isOpen ? "var(--surface-2)" : "transparent" }}
               >
                 <button
                   type="button"
                   onClick={() => setOpenBlockId(block.id)}
-                  className="flex flex-1 items-baseline gap-2 text-left"
+                  className="flex flex-1 items-baseline gap-1.5 text-left"
                 >
-                  <span className="tnum w-16 font-semibold">
+                  <span className="tnum w-14 shrink-0 text-sm font-semibold">
                     {trim(Number(block.weight_kg ?? 0))} kg
                   </span>
                   <span className="tnum text-sm text-text-dim">
-                    {block.full_stand_successes ?? 0}/{block.attempts ?? 0}
+                    {group.stood}/{group.attempts}
                   </span>
-                  {(block.received_not_stood ?? 0) > 0 ? (
-                    <Pill tone="caught">{block.received_not_stood} caught</Pill>
-                  ) : null}
-                  {block.quality_10 ? <Pill tone="accent">Q{block.quality_10}</Pill> : null}
+                  {group.caught > 0 ? <Pill tone="caught">{group.caught} caught</Pill> : null}
+                  {group.quality ? <Pill tone="accent">{group.quality}</Pill> : null}
                   {block.straps ? <Pill>straps</Pill> : null}
                   {variation && !variation.counts_as_full_lift ? (
                     <Pill>{variation.name}</Pill>
                   ) : null}
-                  {block.logged_at ? (
-                    <span className="ml-auto text-[11px] text-text-faint">
+                  {group.ids.length > 1 ? (
+                    <span className="ml-auto text-[10px] text-text-faint">
+                      {group.ids.length} blocks
+                    </span>
+                  ) : block.logged_at ? (
+                    <span className="ml-auto text-[10px] text-text-faint">
                       {londonTime(block.logged_at)}
                     </span>
                   ) : null}
@@ -415,9 +470,13 @@ export function SnatchLogger({
                 <button
                   type="button"
                   disabled={!canWrite || busy}
-                  onClick={() => removeBlock(block.id)}
-                  aria-label={`Delete ${trim(Number(block.weight_kg ?? 0))} kg block`}
-                  className="min-h-[32px] px-1 text-sm text-text-faint disabled:opacity-40"
+                  onClick={() => removeBlock(group.ids[group.ids.length - 1])}
+                  aria-label={
+                    group.ids.length > 1
+                      ? `Remove the last ${trim(Number(block.weight_kg ?? 0))} kg block`
+                      : `Delete ${trim(Number(block.weight_kg ?? 0))} kg block`
+                  }
+                  className="min-h-[30px] px-1 text-sm text-text-faint disabled:opacity-40"
                 >
                   ×
                 </button>
@@ -427,11 +486,6 @@ export function SnatchLogger({
         </div>
       ) : null}
 
-      {failureModes.length === 0 ? null : (
-        <p className="text-[11px] text-text-faint">
-          Failure mode and technique tags are recorded per block in Phase 2.
-        </p>
-      )}
     </div>
   );
 }
