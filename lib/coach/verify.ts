@@ -106,18 +106,82 @@ export function verifyAnswer(
  * The map is intentionally small and explicit. Guessing at names with a
  * general-purpose detector would redact gym names and exercises instead.
  */
-const NAME_REDACTIONS: { pattern: RegExp; replacement: string }[] = [
-  { pattern: /\bRob\b/g, replacement: "a trainer" },
-  // The article is consumed deliberately: "the gym crush" must not become
-  // "the an acquaintance".
-  { pattern: /\b(?:the|my)\s+gym\s+crush\b/gi, replacement: "an acquaintance" },
-  { pattern: /\bgym\s+crush\b/gi, replacement: "an acquaintance" },
+/** One person, as they appear in notes and as the Coach should see them. */
+export interface ThirdParty {
+  alias: string;
+  role: string;
+}
+
+/**
+ * The fallback list.
+ *
+ * The live list lives in `fitness.third_parties` so a new person is a row
+ * rather than a redeploy. These stay in code as the floor: if that query
+ * fails, redaction degrades to this, never to nothing.
+ */
+export const BUILT_IN_THIRD_PARTIES: ThirdParty[] = [
+  { alias: "Rob", role: "a trainer" },
+  { alias: "gym crush", role: "an acquaintance" },
+  { alias: "Sri Lankan guy", role: "a lifter" },
+  { alias: "Miss T", role: "an acquaintance" },
+  { alias: "Lee", role: "an acquaintance" },
 ];
 
-export function redactThirdParties(text: string): { text: string; count: number } {
+const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Shapes that name someone without using a name on the list.
+ *
+ * These are the generalisation, and the reason this is not simply a longer
+ * list of names: "Miss T" and "the Sri Lankan guy" are both patterns, and the
+ * next person described that way will be caught without anyone adding them.
+ *
+ * They are deliberately narrow. A title followed by a capitalised word, or an
+ * article followed by capitalised words and a person-noun. Broadening them
+ * further starts eating ordinary prose.
+ */
+const STRUCTURAL_REDACTIONS: { pattern: RegExp; replacement: string }[] = [
+  // Miss T, Mr Khan, Dr. Patel
+  {
+    pattern: /\b(?:Mr|Mrs|Ms|Miss|Dr|Prof)\.?\s+[A-Z][\w'\u2019-]*/g,
+    replacement: "an acquaintance",
+  },
+  // the Sri Lankan guy, that Polish lad — the article is consumed, as below.
+  {
+    pattern:
+      /\b(?:the|that|this|a)\s+(?:[A-Z][a-z]+\s+){1,2}(?:guy|man|woman|girl|lad|lady|bloke|dude|chap|bloke)\b/g,
+    replacement: "an acquaintance",
+  },
+];
+
+/**
+ * Build the pattern list. Longest alias first, so "Miss T" is replaced before
+ * a bare "T" in the list could claim the "T".
+ *
+ * The article is consumed deliberately on the possessive forms: "the gym
+ * crush" must not become "the an acquaintance".
+ */
+export function redactionPatterns(
+  people: ThirdParty[] = BUILT_IN_THIRD_PARTIES,
+): { pattern: RegExp; replacement: string }[] {
+  const byLength = [...people].sort((a, b) => b.alias.length - a.alias.length);
+  const fromPeople = byLength.flatMap(({ alias, role }) => {
+    const body = escape(alias).replace(/\s+/g, "\\s+");
+    return [
+      { pattern: new RegExp(`\\b(?:the|my|our)\\s+${body}\\b`, "gi"), replacement: role },
+      { pattern: new RegExp(`\\b${body}(?:'s|\u2019s)?\\b`, "gi"), replacement: role },
+    ];
+  });
+  return [...STRUCTURAL_REDACTIONS, ...fromPeople];
+}
+
+export function redactThirdParties(
+  text: string,
+  people?: ThirdParty[],
+): { text: string; count: number } {
   let count = 0;
   let output = text;
-  for (const { pattern, replacement } of NAME_REDACTIONS) {
+  for (const { pattern, replacement } of redactionPatterns(people)) {
     output = output.replace(pattern, () => {
       count += 1;
       return replacement;
@@ -126,11 +190,11 @@ export function redactThirdParties(text: string): { text: string; count: number 
   return { text: output, count };
 }
 
-export function redactDeep<T>(value: T): { value: T; count: number } {
+export function redactDeep<T>(value: T, people?: ThirdParty[]): { value: T; count: number } {
   let count = 0;
   const walk = (input: unknown): unknown => {
     if (typeof input === "string") {
-      const { text, count: n } = redactThirdParties(input);
+      const { text, count: n } = redactThirdParties(input, people);
       count += n;
       return text;
     }

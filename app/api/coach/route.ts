@@ -99,6 +99,14 @@ export async function POST(request: Request) {
     { role: "user", content: question },
   ];
 
+  // The redaction list, read once per turn. A failed or empty lookup falls
+  // back to the built-in list rather than to no redaction at all.
+  const { data: people } = await db
+    .from("third_parties")
+    .select("alias, role")
+    .eq("is_active", true);
+  const redactionList = people && people.length > 0 ? people : undefined;
+
   const evidence: unknown[] = [];
   const toolCalls: { name: string; input: unknown }[] = [];
   let redactedNames = 0;
@@ -149,7 +157,7 @@ export async function POST(request: Request) {
         try {
           const raw = await runTool(use.name, use.input);
           // Redact before the result is ever sent back to the model.
-          const { value, count } = redactDeep(raw);
+          const { value, count } = redactDeep(raw, redactionList);
           redactedNames += count;
           evidence.push(value);
           results.push({

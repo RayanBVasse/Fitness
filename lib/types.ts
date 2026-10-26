@@ -114,7 +114,30 @@ export interface ContextNote {
   tags: string[];
   review_status: NoteReviewStatus;
   linked_session_id: string | null;
+  workstream: Workstream | null;
 }
+
+/**
+ * What a note is about, as opposed to who said it. `note_type` carries the
+ * second: an athlete report and an assistant hypothesis are different kinds
+ * of claim and must never be blended, which is why they are separate fields.
+ */
+export const NOTE_CATEGORIES = [
+  "observation",
+  "technique",
+  "coaching_advice",
+  "question",
+  "experiment",
+] as const;
+export type NoteCategory = (typeof NOTE_CATEGORIES)[number];
+
+export const NOTE_CATEGORY_LABELS: Record<NoteCategory, string> = {
+  observation: "Observation",
+  technique: "Technique",
+  coaching_advice: "Coaching advice",
+  question: "Question",
+  experiment: "Experiment",
+};
 
 export interface MuscleGroup {
   id: number;

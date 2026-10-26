@@ -43,5 +43,39 @@ check("bare and possessive forms redact cleanly", !r2.text.includes("crush") && 
 const deep = redactDeep({ notes: [{ content: "Rob said hello" }] });
 check("nested names are redacted", JSON.stringify(deep.value).includes("a trainer") && deep.count === 1, deep);
 
+// --- the widened redactor -------------------------------------------------
+// Real text from a gym note, which is what prompted widening this.
+const gymNote =
+  "Met with the Sri Lankan guy... he showed ne Sots press. Miss T was " +
+  "exceptionally chatty and nice. Lee noticed... and was looking away.";
+const wide = redactThirdParties(gymNote);
+check("nationality descriptor is redacted", !wide.text.includes("Sri Lankan"), wide);
+check("title plus initial is redacted", !wide.text.includes("Miss T"), wide);
+check("bare given name is redacted", !/\bLee\b/.test(wide.text), wide);
+
+// The structural patterns must catch people who are on no list at all.
+const unknown = redactThirdParties("I spoke to Mr Okafor and that Polish lad.");
+check("unlisted title is caught structurally", !unknown.text.includes("Okafor"), unknown);
+check("unlisted descriptor is caught structurally", !unknown.text.includes("Polish"), unknown);
+
+// A longer alias must win over a shorter one it contains.
+const overlap = redactThirdParties("Miss T said hello", [
+  { alias: "Miss T", role: "an acquaintance" },
+  { alias: "T", role: "someone" },
+]);
+check("longest alias wins", overlap.text === "an acquaintance said hello", overlap);
+
+// Possessives, and the article that must not survive.
+const poss = redactThirdParties("the gym crush waved.");
+check("article is consumed", poss.text === "an acquaintance waved.", poss);
+
+// Ordinary prose must survive untouched.
+const prose = redactThirdParties("The bar felt heavy. A good session, the first pull was slow.");
+check("ordinary prose is not redacted", prose.count === 0, prose);
+
+// A missing list must fall back to the built-ins, never to nothing.
+const fallback = redactThirdParties("Rob was there", undefined);
+check("missing list falls back to built-ins", fallback.text === "a trainer was there", fallback);
+
 console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

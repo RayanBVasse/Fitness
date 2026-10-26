@@ -7,12 +7,14 @@ import { SnatchLogger } from "@/components/today/SnatchLogger";
 import { DailyCheckIn } from "@/components/today/DailyCheckIn";
 import { HypertrophyLogger } from "@/components/today/HypertrophyLogger";
 import { CalisthenicsLogger } from "@/components/today/CalisthenicsLogger";
+import { DayNotes } from "@/components/today/DayNotes";
 import { Card, Chip, Pill, SectionTitle, wsColour } from "@/components/ui";
 import { isoWeekday, londonTime, longDate, weekdayName, daysBetween } from "@/lib/time";
 import {
   WORKSTREAM_LABELS,
   type AssistanceType,
   type CalisthenicsEntry,
+  type ContextNote,
   type Exercise,
   type Gym,
   type HypertrophySet,
@@ -57,6 +59,7 @@ type Props = {
   skillVariations: SkillVariation[];
   assistanceTypes: AssistanceType[];
   lastSession: SessionSummary | null;
+  notes: ContextNote[];
   gyms: Gym[];
   presets: WeightPreset[];
   variations: SnatchVariation[];
@@ -101,6 +104,7 @@ export function TodayScreen({
   skillVariations,
   assistanceTypes,
   lastSession,
+  notes,
   gyms,
   presets,
   variations,
@@ -416,6 +420,15 @@ export function TodayScreen({
               initialBlocks={sessionSnatchBlocks}
               canWrite={canWrite}
             />
+            <div className="mt-3">
+              <DayNotes
+                date={date}
+                sessionId={session.id}
+                workstream="snatch"
+                notes={notes}
+                canWrite={canWrite}
+              />
+            </div>
           </Card>
 
           <Card style={workstreamCard("hypertrophy")}>
@@ -431,6 +444,15 @@ export function TodayScreen({
               initialSets={sessionHypertrophy}
               canWrite={canWrite}
             />
+            <div className="mt-3">
+              <DayNotes
+                date={date}
+                sessionId={session.id}
+                workstream="hypertrophy"
+                notes={notes}
+                canWrite={canWrite}
+              />
+            </div>
           </Card>
 
           <Card style={workstreamCard("calisthenics")}>
@@ -446,6 +468,15 @@ export function TodayScreen({
               initialEntries={sessionCalisthenics}
               canWrite={canWrite}
             />
+            <div className="mt-3">
+              <DayNotes
+                date={date}
+                sessionId={session.id}
+                workstream="calisthenics"
+                notes={notes}
+                canWrite={canWrite}
+              />
+            </div>
           </Card>
         </>
       )}
@@ -455,6 +486,19 @@ export function TodayScreen({
           {error}
         </p>
       ) : null}
+
+      {/* The day's own notes: the gym, the body, anything the Coach should
+          know that is not attached to one workstream. These replaced the
+          check-in's free-text dimensions, which lived in a table of
+          measurements and were never measurements. */}
+      <Card>
+        <DayNotes
+          date={date}
+          sessionId={session?.id ?? null}
+          notes={notes}
+          canWrite={canWrite}
+        />
+      </Card>
 
       {lastSession ? (
         <Card>

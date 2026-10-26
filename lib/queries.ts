@@ -63,6 +63,8 @@ export interface TodayData {
   recentSkillVariationIds: number[];
   attempts: SnatchAttempt[];
   lastSession: SessionSummary | null;
+  /** Notes anchored to this day, both the day's own and each workstream's. */
+  notes: ContextNote[];
 }
 
 export async function getReferenceData() {
@@ -160,11 +162,21 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
       .limit(1),
   );
 
+  const notesResult = await safeRead<ContextNote[]>((c) =>
+    c
+      .from("context_notes")
+      .select<string, ContextNote>("*")
+      .eq("anchor_date", date)
+      .eq("source_type", "authored_in_app")
+      .order("created_at", { ascending: true }),
+  );
+
   if (sessions.length === 0) {
     return {
       day,
       metricDefs,
       metrics,
+      notes: notesResult.data ?? [],
       sessions: [],
       blocks: [],
       hypertrophySets: [],
@@ -232,6 +244,7 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     day,
     metricDefs,
     metrics,
+    notes: notesResult.data ?? [],
     sessions,
     blocks: blocks.data ?? [],
     snatchBlocks: snatchBlocks.data ?? [],
@@ -416,7 +429,7 @@ export async function getContextNotes(filters: {
       let q = c
         .from("context_notes")
         .select(
-          "id, external_source_id, note_type, category, content, anchor_date, period_label, evidence_status, sensitivity, candidate_numeric, tags, review_status, linked_session_id",
+          "id, external_source_id, note_type, category, content, anchor_date, period_label, evidence_status, sensitivity, candidate_numeric, tags, review_status, linked_session_id, workstream",
         )
         .order("anchor_date", { ascending: false, nullsFirst: false })
         .limit(200);

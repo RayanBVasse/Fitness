@@ -383,17 +383,25 @@ async function exerciseProgress(args: { exercise: string; days?: number }): Prom
 // ---------------------------------------------------------------------------
 // approved_notes — narrative, clearly marked as such
 // ---------------------------------------------------------------------------
-async function approvedNotes(args: { from?: string; to?: string; search?: string }): Promise<ToolResult> {
+async function approvedNotes(args: {
+  from?: string;
+  to?: string;
+  search?: string;
+  workstream?: string;
+}): Promise<ToolResult> {
   const db = readClient();
   let query = db
     .from("context_notes")
-    .select("external_source_id, anchor_date, period_label, note_type, category, evidence_status, content")
+    .select(
+      "external_source_id, anchor_date, period_label, note_type, category, evidence_status, workstream, tags, content",
+    )
     .eq("review_status", "approved")
     .order("anchor_date", { ascending: false })
     .limit(40);
   if (args.from) query = query.gte("anchor_date", args.from);
   if (args.to) query = query.lte("anchor_date", args.to);
   if (args.search) query = query.ilike("content", `%${args.search}%`);
+  if (args.workstream) query = query.eq("workstream", args.workstream);
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
@@ -585,6 +593,7 @@ export const TOOLS: Record<string, { schema: AnthropicTool; run: Executor }> = {
           from: { type: "string" },
           to: { type: "string" },
           search: { type: "string" },
+          workstream: { type: "string", enum: ["snatch", "calisthenics", "hypertrophy"] },
         },
         required: [],
         additionalProperties: false,
@@ -599,7 +608,7 @@ export interface AnthropicTool {
   description: string;
   input_schema: {
     type: "object";
-    properties: Record<string, { type: string; description?: string }>;
+    properties: Record<string, { type: string; description?: string; enum?: string[] }>;
     required: string[];
     additionalProperties: boolean;
   };

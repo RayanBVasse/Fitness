@@ -37,6 +37,7 @@ export default async function TodayPage() {
       skillVariations={reference.skillVariations}
       assistanceTypes={reference.assistanceTypes}
       lastSession={today.lastSession}
+      notes={today.notes}
       gyms={reference.gyms}
       presets={reference.presets}
       variations={reference.variations}

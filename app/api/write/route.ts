@@ -111,6 +111,26 @@ const Actions = z.discriminatedUnion("action", [
     entry_id: uuid,
   }),
   z.object({
+    action: z.literal("add_note"),
+    content: z.string().trim().min(1).max(4000),
+    category: z.enum(["observation", "technique", "coaching_advice", "question", "experiment"]),
+    anchor_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    workstream: z.enum(["snatch", "calisthenics", "hypertrophy"]).nullable().optional(),
+    session_id: uuid.nullable().optional(),
+    important: z.boolean().optional(),
+  }),
+  z.object({
+    action: z.literal("update_note"),
+    note_id: uuid,
+    content: z.string().trim().min(1).max(4000),
+    category: z.enum(["observation", "technique", "coaching_advice", "question", "experiment"]),
+    important: z.boolean().optional(),
+  }),
+  z.object({
+    action: z.literal("delete_note"),
+    note_id: uuid,
+  }),
+  z.object({
     action: z.literal("set_note_review"),
     note_ids: z.array(uuid).min(1).max(200),
     review_status: z.enum(["pending", "approved", "rejected"]),
@@ -543,6 +563,89 @@ export async function POST(request: Request) {
         return NextResponse.json({ deleted: input.entry_id });
       }
 
+      case "add_note": {
+        // Approved on write. The review gate exists so that material written
+        // without the Coach in mind is not sent to it unseen; a note typed
+        // into a box labelled "for the Coach" has already cleared that bar.
+        // The imported pack keeps its gate untouched.
+        const { data, error } = await db
+          .from("context_notes")
+          .insert({
+            external_source_id: `authored:${crypto.randomUUID()}`,
+            note_type: "athlete_report",
+            category: input.category,
+            content: input.content,
+            anchor_date: input.anchor_date,
+            workstream: input.workstream ?? null,
+            source_type: "authored_in_app",
+            evidence_status: "user_reported",
+            sensitivity: "normal",
+            review_status: "approved",
+            reviewed_at: new Date().toISOString(),
+            linked_session_id: input.session_id ?? null,
+            tags: input.important ? ["authored", "important"] : ["authored"],
+            content_hash: await sha256(input.content),
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        return NextResponse.json({ note: data });
+      }
+
+      case "update_note": {
+        // Authored notes only. An imported note's wording is a record of what
+        // was said at the time; editing it would quietly rewrite the source.
+        const { data: existing, error: readError } = await db
+          .from("context_notes")
+          .select("tags, source_type")
+          .eq("id", input.note_id)
+          .maybeSingle();
+        if (readError) throw readError;
+        if (!existing || existing.source_type === "pack_import") {
+          return NextResponse.json(
+            { error: "Imported notes record what was said at the time and are not editable." },
+            { status: 409 },
+          );
+        }
+        const tags = (existing.tags ?? []).filter(
+          (t: string) => t !== "important",
+        );
+        if (input.important) tags.push("important");
+
+        const { data, error } = await db
+          .from("context_notes")
+          .update({
+            content: input.content,
+            category: input.category,
+            tags,
+            content_hash: await sha256(input.content),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", input.note_id)
+          .select()
+          .single();
+        if (error) throw error;
+        return NextResponse.json({ note: data });
+      }
+
+      case "delete_note": {
+        const { data: existing, error: readError } = await db
+          .from("context_notes")
+          .select("source_type")
+          .eq("id", input.note_id)
+          .maybeSingle();
+        if (readError) throw readError;
+        if (!existing || existing.source_type === "pack_import") {
+          return NextResponse.json(
+            { error: "Imported notes are part of the record and are rejected, not deleted." },
+            { status: 409 },
+          );
+        }
+        const { error } = await db.from("context_notes").delete().eq("id", input.note_id);
+        if (error) throw error;
+        return NextResponse.json({ deleted: input.note_id });
+      }
+
       case "set_note_review": {
         // Approval is the consent gate: the Coach can read approved notes and
         // nothing else, so this is the only thing standing between a private
@@ -769,4 +872,15 @@ export async function POST(request: Request) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+/** Content hash for change detection on re-import. Prefixed so the pack's own
+ *  md5 hashes stay distinguishable from these. */
+async function sha256(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hex = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `sha256:${hex}`;
 }
