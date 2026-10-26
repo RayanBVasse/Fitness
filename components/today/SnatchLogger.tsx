@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { Pill, SectionTitle, wsColour } from "@/components/ui";
 import { londonTime } from "@/lib/time";
+import { OUTCOME_LABELS } from "@/lib/types";
 import type {
+  FailureMode,
+  SnatchAttempt,
   SnatchBlock,
   SnatchOutcome,
   SnatchVariation,
@@ -22,6 +25,13 @@ import type {
  *
  * Three outcome buttons, not two. "Caught, no stand" is a real and distinct
  * result: at 50 kg it is the difference between a near miss and a non-lift.
+ *
+ * Every attempt is shown, in the order it happened, and every one can be
+ * opened, corrected or removed. The list used to collapse consecutive blocks
+ * at the same load into one line, which summed the counters, hid whichever
+ * field made two rows differ, and left all but the newest block in a group
+ * unreachable. Opening a load twice now continues the first block instead of
+ * starting a second, so there is nothing left to collapse.
  */
 
 type Props = {
@@ -31,6 +41,8 @@ type Props = {
   variations: SnatchVariation[];
   ladder: WarmupLadder | null;
   initialBlocks: SnatchBlock[];
+  initialAttempts: SnatchAttempt[];
+  failureModes: FailureMode[];
   canWrite: boolean;
 };
 
@@ -47,10 +59,14 @@ export function SnatchLogger({
   variations,
   ladder,
   initialBlocks,
+  initialAttempts,
+  failureModes,
   canWrite,
 }: Props) {
   const router = useRouter();
   const [blocks, setBlocks] = useState<SnatchBlock[]>(initialBlocks);
+  const [attempts, setAttempts] = useState<SnatchAttempt[]>(initialAttempts);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [openBlockId, setOpenBlockId] = useState<string | null>(
     initialBlocks.length ? initialBlocks[initialBlocks.length - 1].id : null,
   );
@@ -114,24 +130,55 @@ export function SnatchLogger({
   function logAttempt(outcome: SnatchOutcome) {
     if (!openBlock) return;
     run(async () => {
-      const result = await write<{ weight_block: SnatchBlock }>({
+      const result = await write<{ attempt: SnatchAttempt; weight_block: SnatchBlock }>({
         action: "log_attempt",
         block_id: openBlock.id,
         outcome,
       });
+      setAttempts((prev) => [...prev, result.attempt]);
       setBlocks((prev) =>
         prev.map((b) => (b.id === result.weight_block.id ? result.weight_block : b)),
       );
     });
   }
 
+  /** Correct one lift: its outcome, how it looked, or why it was missed. */
+  function patchAttempt(id: string, patch: Partial<SnatchAttempt>) {
+    run(async () => {
+      const result = await write<{ attempt: SnatchAttempt; weight_block: SnatchBlock }>({
+        action: "update_snatch_attempt",
+        attempt_id: id,
+        ...patch,
+      });
+      setAttempts((prev) => prev.map((a) => (a.id === id ? result.attempt : a)));
+      setBlocks((prev) =>
+        prev.map((b) => (b.id === result.weight_block.id ? result.weight_block : b)),
+      );
+    });
+  }
+
+  function removeAttempt(id: string) {
+    run(async () => {
+      const result = await write<{ weight_block: SnatchBlock }>({
+        action: "delete_snatch_attempt",
+        attempt_id: id,
+      });
+      setAttempts((prev) => prev.filter((a) => a.id !== id));
+      setBlocks((prev) =>
+        prev.map((b) => (b.id === result.weight_block.id ? result.weight_block : b)),
+      );
+      if (detailId === id) setDetailId(null);
+    });
+  }
+
   function undo() {
     if (!openBlock) return;
     run(async () => {
-      const result = await write<{ weight_block: SnatchBlock }>({
+      const result = await write<{ undone: string; weight_block: SnatchBlock }>({
         action: "undo_attempt",
         block_id: openBlock.id,
       });
+      setAttempts((prev) => prev.filter((a) => a.id !== result.undone));
       setBlocks((prev) =>
         prev.map((b) => (b.id === result.weight_block.id ? result.weight_block : b)),
       );
@@ -159,59 +206,30 @@ export function SnatchLogger({
     });
   }
 
+  /** The lifts of one block, in the order they happened. */
+  function attemptsOf(blockId: string): SnatchAttempt[] {
+    return attempts
+      .filter((a) => a.block_id === blockId)
+      .sort((a, b) => a.ordinal - b.ordinal);
+  }
+
   /**
-   * Consecutive blocks at the same load, variation and strap setting read as
-   * one line. Quality shows as a range when the blocks disagree, because
-   * averaging a technical judgement would invent a score nobody gave.
+   * Technical quality across a block's lifts, as a range rather than a mean.
+   * Averaging a judgement invents a score nobody gave. Falls back to the
+   * block's own rating, which is where imported history keeps it.
    */
-  const collapsed = useMemo(() => {
-    const out: {
-      key: string;
-      ids: string[];
-      last: SnatchBlock;
-      attempts: number;
-      stood: number;
-      caught: number;
-      quality: string | null;
-    }[] = [];
-    for (const block of blocks) {
-      const previous = out.at(-1);
-      const matches =
-        previous &&
-        Number(previous.last.weight_kg) === Number(block.weight_kg) &&
-        previous.last.variation_id === block.variation_id &&
-        previous.last.straps === block.straps;
-      if (previous && matches) {
-        previous.ids.push(block.id);
-        previous.last = block;
-        previous.attempts += block.attempts ?? 0;
-        previous.stood += block.full_stand_successes ?? 0;
-        previous.caught += block.received_not_stood ?? 0;
-      } else {
-        out.push({
-          key: block.id,
-          ids: [block.id],
-          last: block,
-          attempts: block.attempts ?? 0,
-          stood: block.full_stand_successes ?? 0,
-          caught: block.received_not_stood ?? 0,
-          quality: null,
-        });
-      }
+  function qualityOf(block: SnatchBlock): string | null {
+    const scores = attemptsOf(block.id)
+      .map((a) => a.quality_10)
+      .filter((q): q is number => typeof q === "number");
+    if (scores.length === 0) {
+      return block.quality_10 != null ? `Q${block.quality_10}` : null;
     }
-    for (const group of out) {
-      const scores = group.ids
-        .map((id) => blocks.find((b) => b.id === id)?.quality_10)
-        .filter((q): q is number => typeof q === "number");
-      group.quality =
-        scores.length === 0
-          ? null
-          : Math.min(...scores) === Math.max(...scores)
-            ? `Q${Math.min(...scores)}`
-            : `Q${Math.min(...scores)}-${Math.max(...scores)}`;
-    }
-    return out;
-  }, [blocks]);
+    const low = Math.min(...scores);
+    const high = Math.max(...scores);
+    return low === high ? `Q${low}` : `Q${low}-${high}`;
+  }
+
 
   const ladderWeights = ladder
     ? [...ladder.warmup.map((w) => w.weight_kg), ...ladder.working]
@@ -409,7 +427,7 @@ export function SnatchLogger({
                   style={{
                     borderColor:
                       openBlock.quality_10 === n ? wsColour("snatch") : "var(--border)",
-                    color: openBlock.quality_10 === n ? wsColour("snatch") : "var(--text-faint)",
+                    color: openBlock.quality_10 === n ? wsColour("snatch") : "var(--text-dim)",
                   }}
                 >
                   {n}
@@ -430,63 +448,254 @@ export function SnatchLogger({
           into one line: five rows of "35 kg 1/1" is one fact written five
           times. */}
       {blocks.length ? (
-        <div className="space-y-1">
-          {collapsed.map((group) => {
-            const block = group.last;
-            const isOpen = group.ids.includes(openBlockId ?? "");
+        <div className="space-y-1.5">
+          {blocks.map((block) => {
+            const isOpen = block.id === openBlockId;
             const variation = variations.find((v) => v.id === block.variation_id);
+            const lifts = attemptsOf(block.id);
+            // Both numbers from the same source. An imported block has
+            // counters and no rows; taking the numerator from rows and the
+            // denominator from counters reports 0/2 for a block that was
+            // stood twice.
+            const stood = lifts.length
+              ? lifts.filter((a) => a.outcome === "stood").length
+              : (block.full_stand_successes ?? 0);
+            const total = lifts.length || (block.attempts ?? 0);
+            const caught = lifts.length
+              ? lifts.filter((a) => a.outcome === "received_not_stood").length
+              : (block.received_not_stood ?? 0);
+            const quality = qualityOf(block);
             return (
               <div
-                key={group.key}
-                className="flex items-center gap-2 rounded-[var(--radius)] border border-border px-2.5 py-1.5"
-                style={{ background: isOpen ? "var(--surface-2)" : "transparent" }}
+                key={block.id}
+                className="rounded-[var(--radius)] border px-2.5 py-1.5"
+                style={{
+                  borderColor: isOpen ? wsColour("snatch") : "var(--border)",
+                  background: isOpen ? "var(--surface-2)" : "transparent",
+                }}
               >
-                <button
-                  type="button"
-                  onClick={() => setOpenBlockId(block.id)}
-                  className="flex flex-1 items-baseline gap-1.5 text-left"
-                >
-                  <span className="tnum w-14 shrink-0 text-sm font-semibold">
-                    {trim(Number(block.weight_kg ?? 0))} kg
-                  </span>
-                  <span className="tnum text-sm text-text-dim">
-                    {group.stood}/{group.attempts}
-                  </span>
-                  {group.caught > 0 ? <Pill tone="caught">{group.caught} caught</Pill> : null}
-                  {group.quality ? <Pill tone="accent">{group.quality}</Pill> : null}
-                  {block.straps ? <Pill>straps</Pill> : null}
-                  {variation && !variation.counts_as_full_lift ? (
-                    <Pill>{variation.name}</Pill>
-                  ) : null}
-                  {group.ids.length > 1 ? (
-                    <span className="ml-auto text-[10px] text-text-faint">
-                      {group.ids.length} blocks
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOpenBlockId(block.id)}
+                    className="flex flex-1 flex-wrap items-baseline gap-1.5 text-left"
+                  >
+                    <span className="tnum w-14 shrink-0 text-sm font-semibold">
+                      {trim(Number(block.weight_kg ?? 0))} kg
                     </span>
-                  ) : block.logged_at ? (
-                    <span className="ml-auto text-[10px] text-text-faint">
-                      {londonTime(block.logged_at)}
+                    <span className="tnum text-sm text-text-dim">
+                      {stood}/{total}
                     </span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  disabled={!canWrite || busy}
-                  onClick={() => removeBlock(group.ids[group.ids.length - 1])}
-                  aria-label={
-                    group.ids.length > 1
-                      ? `Remove the last ${trim(Number(block.weight_kg ?? 0))} kg block`
-                      : `Delete ${trim(Number(block.weight_kg ?? 0))} kg block`
-                  }
-                  className="min-h-[30px] px-1 text-sm text-text-faint disabled:opacity-40"
-                >
-                  ×
-                </button>
+                    {caught > 0 ? <Pill tone="caught">{caught} caught</Pill> : null}
+                    {quality ? <Pill tone="accent">{quality}</Pill> : null}
+                    {block.straps ? <Pill>straps</Pill> : null}
+                    {block.is_warmup ? <Pill>warm-up</Pill> : null}
+                    {/* Always shown, not only when it fails to count. Which
+                        variation a block was is the thing that used to make
+                        two identical-looking rows refuse to merge. */}
+                    {variation ? (
+                      <Pill tone={variation.counts_as_full_lift ? "neutral" : "caught"}>
+                        {variation.name}
+                      </Pill>
+                    ) : null}
+                    {block.logged_at ? (
+                      <span className="ml-auto text-[10px] text-text-dim">
+                        {londonTime(block.logged_at)}
+                      </span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canWrite || busy}
+                    onClick={() => removeBlock(block.id)}
+                    aria-label={`Delete the whole ${trim(
+                      Number(block.weight_kg ?? 0),
+                    )} kg block and its ${lifts.length} lifts`}
+                    className="min-h-[30px] px-1 text-sm text-text-dim disabled:opacity-40"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {/* Each lift, in order. Tap one to correct it. */}
+                {lifts.length > 0 ? (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                    {lifts.map((a) => {
+                      const tone =
+                        a.outcome === "stood"
+                          ? "var(--stood)"
+                          : a.outcome === "received_not_stood"
+                            ? "var(--caught)"
+                            : "var(--missed)";
+                      return (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => setDetailId(detailId === a.id ? null : a.id)}
+                          aria-label={`Lift ${a.ordinal}, ${OUTCOME_LABELS[a.outcome]}`}
+                          className="tnum flex h-8 min-w-[32px] items-center justify-center gap-0.5 rounded-md border px-1.5 text-[11px] font-bold"
+                          style={{
+                            borderColor: tone,
+                            color: tone,
+                            background:
+                              detailId === a.id ? "var(--surface)" : "transparent",
+                          }}
+                        >
+                          {a.ordinal}
+                          {a.quality_10 != null ? (
+                            <span className="font-normal">Q{a.quality_10}</span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-[10px] text-text-dim">
+                    {block.attempts
+                      ? "Recorded as a block total, without individual lifts."
+                      : "Opened, nothing logged yet."}
+                  </p>
+                )}
+
+                {detailId && lifts.some((a) => a.id === detailId) ? (
+                  <AttemptDetail
+                    attempt={lifts.find((a) => a.id === detailId)!}
+                    failureModes={failureModes}
+                    disabled={!canWrite || busy}
+                    onPatch={(patch) => patchAttempt(detailId, patch)}
+                    onDelete={() => removeAttempt(detailId)}
+                    onClose={() => setDetailId(null)}
+                  />
+                ) : null}
               </div>
             );
           })}
         </div>
       ) : null}
 
+    </div>
+  );
+}
+
+/**
+ * One lift. Its outcome is correctable — a stand you decide was a press-out is
+ * still a recorded fact, and the block's counters follow from the row, so
+ * fixing it here fixes every figure that depends on it.
+ */
+function AttemptDetail({
+  attempt,
+  failureModes,
+  disabled,
+  onPatch,
+  onDelete,
+  onClose,
+}: {
+  attempt: SnatchAttempt;
+  failureModes: FailureMode[];
+  disabled: boolean;
+  onPatch: (patch: Partial<SnatchAttempt>) => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="mt-2 rounded-[var(--radius)] border p-2"
+      style={{ borderColor: wsColour("snatch"), background: "var(--surface)" }}
+    >
+      <div className="flex items-baseline justify-between">
+        <span className="text-[11px] font-semibold">Lift {attempt.ordinal}</span>
+        <span className="flex gap-2 text-[11px] text-text-dim">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={onDelete}
+            className="underline underline-offset-2"
+          >
+            delete
+          </button>
+          <button type="button" onClick={onClose} className="underline underline-offset-2">
+            close
+          </button>
+        </span>
+      </div>
+
+      <div className="mt-2 grid grid-cols-3 gap-1">
+        {OUTCOMES.map(({ outcome, label }) => {
+          const on = attempt.outcome === outcome;
+          return (
+            <button
+              key={outcome}
+              type="button"
+              disabled={disabled}
+              aria-pressed={on}
+              onClick={() => onPatch({ outcome })}
+              className="min-h-[38px] rounded-md border text-xs font-bold disabled:opacity-40"
+              style={{
+                borderColor: on ? `var(--${outcome === "received_not_stood" ? "caught" : outcome})` : "var(--border)",
+                color: on
+                  ? `var(--${outcome === "received_not_stood" ? "caught" : outcome})`
+                  : "var(--text-dim)",
+                background: on
+                  ? `var(--${outcome === "received_not_stood" ? "caught" : outcome}-bg)`
+                  : "transparent",
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-2">
+        <div className="mb-1 text-[10px] uppercase tracking-wide text-text-dim">
+          Technical quality {attempt.quality_10 ? `· ${attempt.quality_10}/10` : "· not rated"}
+        </div>
+        <div className="flex gap-1">
+          {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+            <button
+              key={n}
+              type="button"
+              disabled={disabled}
+              onClick={() => onPatch({ quality_10: attempt.quality_10 === n ? null : n })}
+              aria-label={`Quality ${n} of 10 for lift ${attempt.ordinal}`}
+              className="tnum h-8 flex-1 rounded-md border text-[11px] font-semibold disabled:opacity-40"
+              style={{
+                borderColor: attempt.quality_10 === n ? wsColour("snatch") : "var(--border)",
+                color: attempt.quality_10 === n ? wsColour("snatch") : "var(--text-dim)",
+              }}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {attempt.outcome !== "stood" && failureModes.length > 0 ? (
+        <div className="mt-2">
+          <div className="mb-1 text-[10px] uppercase tracking-wide text-text-dim">
+            What went wrong
+          </div>
+          <select
+            value={attempt.failure_mode_id ?? ""}
+            disabled={disabled}
+            onChange={(event) =>
+              onPatch({
+                failure_mode_id:
+                  event.target.value === "" ? null : Number(event.target.value),
+              })
+            }
+            className="min-h-[40px] w-full rounded-[var(--radius)] border border-border bg-surface-2 px-2 text-sm"
+            aria-label="Failure mode"
+          >
+            <option value="">Not recorded</option>
+            {failureModes.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -18,6 +18,7 @@ import {
   type CalisthenicsEntry,
   type ContextNote,
   type Exercise,
+  type FailureMode,
   type Gym,
   type HypertrophySet,
   type LastExerciseSetting,
@@ -29,6 +30,7 @@ import {
   type Session,
   type SessionBlock,
   type SessionSummary,
+  type SnatchAttempt,
   type SnatchBlock,
   type SnatchObjective,
   type DailyMetric,
@@ -50,6 +52,7 @@ type Props = {
   sessions: Session[];
   blocks: SessionBlock[];
   snatchBlocks: SnatchBlock[];
+  snatchAttempts: SnatchAttempt[];
   hypertrophySets: HypertrophySet[];
   calisthenicsEntries: CalisthenicsEntry[];
   calisthenicsAttempts: CalisthenicsAttempt[];
@@ -66,6 +69,7 @@ type Props = {
   lastSession: SessionSummary | null;
   notes: ContextNote[];
   gyms: Gym[];
+  failureModes: FailureMode[];
   presets: WeightPreset[];
   variations: SnatchVariation[];
   ladder: WarmupLadder | null;
@@ -98,6 +102,7 @@ export function TodayScreen({
   sessions,
   blocks,
   snatchBlocks,
+  snatchAttempts,
   hypertrophySets,
   calisthenicsEntries,
   calisthenicsAttempts,
@@ -114,6 +119,7 @@ export function TodayScreen({
   lastSession,
   notes,
   gyms,
+  failureModes,
   presets,
   variations,
   ladder,
@@ -481,6 +487,10 @@ export function TodayScreen({
                 variations={variations}
                 ladder={ladder}
                 initialBlocks={sessionSnatchBlocks}
+                initialAttempts={snatchAttempts.filter((a) =>
+                  sessionSnatchBlocks.some((b) => b.id === a.block_id),
+                )}
+                failureModes={failureModes}
                 canWrite={canWrite}
               />
               <div className="mt-3">

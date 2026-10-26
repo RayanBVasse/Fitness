@@ -55,6 +55,9 @@ export interface TodayData {
   hypertrophySets: HypertrophySet[];
   calisthenicsEntries: CalisthenicsEntry[];
   calisthenicsAttempts: CalisthenicsAttempt[];
+  /** Every lift of the day, in order. The block counters are a trigger-kept
+   *  summary of these, so they are the detail behind every snatch figure. */
+  snatchAttempts: SnatchAttempt[];
   /** The most recent logged value per metric, from before today. Shown as a
    *  reference beside each field and never filled in: a value you did not
    *  measure today is not a measurement of today. */
@@ -166,6 +169,17 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
       .limit(1),
   );
 
+  const snatchAttemptsResult = await safeRead<SnatchAttempt[]>((c) =>
+    c
+      .from("snatch_attempts")
+      .select<string, SnatchAttempt>("*")
+      .in(
+        "block_id",
+        (snatchBlocks.data ?? []).map((b) => b.id),
+      )
+      .order("ordinal"),
+  );
+
   const attemptsResult = await safeRead<CalisthenicsAttempt[]>((c) =>
     c
       .from("calisthenics_attempts")
@@ -198,6 +212,7 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
       metrics,
       notes: notesResult.data ?? [],
       calisthenicsAttempts: [],
+      snatchAttempts: [],
       sessions: [],
       blocks: [],
       hypertrophySets: [],
@@ -272,6 +287,7 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     hypertrophySets: hypertrophySets.data ?? [],
     calisthenicsEntries: calisthenicsEntries.data ?? [],
     calisthenicsAttempts: attemptsResult.data ?? [],
+    snatchAttempts: snatchAttemptsResult.data ?? [],
     lastMetricValues: dedupeByMetric(priorMetrics.data ?? []),
     lastExerciseSettings: lastExercise.data ?? [],
     lastSkillSettings: lastSkill.data ?? [],

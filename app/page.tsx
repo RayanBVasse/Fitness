@@ -25,6 +25,7 @@ export default async function TodayPage() {
       sessions={today.sessions}
       blocks={today.blocks}
       snatchBlocks={today.snatchBlocks}
+      snatchAttempts={today.snatchAttempts}
       hypertrophySets={today.hypertrophySets}
       calisthenicsEntries={today.calisthenicsEntries}
       calisthenicsAttempts={today.calisthenicsAttempts}
@@ -41,6 +42,7 @@ export default async function TodayPage() {
       lastSession={today.lastSession}
       notes={today.notes}
       gyms={reference.gyms}
+      failureModes={reference.failureModes}
       presets={reference.presets}
       variations={reference.variations}
       ladder={reference.ladder}

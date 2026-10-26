@@ -195,6 +195,18 @@ const Actions = z.discriminatedUnion("action", [
     is_cooldown: z.boolean().optional(),
   }),
   z.object({
+    action: z.literal("update_snatch_attempt"),
+    attempt_id: uuid,
+    outcome: z.enum(["stood", "received_not_stood", "missed", "aborted"]).optional(),
+    quality_10: z.number().int().min(1).max(10).nullable().optional(),
+    failure_mode_id: z.number().int().positive().nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+  }),
+  z.object({
+    action: z.literal("delete_snatch_attempt"),
+    attempt_id: uuid,
+  }),
+  z.object({
     action: z.literal("log_attempt"),
     block_id: uuid,
     outcome: z.enum(["stood", "received_not_stood", "missed", "aborted"]),
@@ -870,6 +882,25 @@ export async function POST(request: Request) {
       }
 
       case "open_weight_block": {
+        // One block per load, variation and strap setting in a session.
+        // Opening 45 kg a second time continues the first one rather than
+        // starting a rival: two blocks that differ in nothing are two
+        // records of one thing, and the list then has to merge them back
+        // together and loses the ability to address either.
+        const { data: existing, error: existingError } = await db
+          .from("snatch_blocks")
+          .select("*")
+          .eq("session_id", input.session_id)
+          .eq("weight_kg", input.weight_kg)
+          .eq("variation_id", input.variation_id)
+          .order("logged_at")
+          .limit(1);
+        if (existingError) throw existingError;
+        const match = (existing ?? []).find(
+          (b) => Boolean(b.straps) === Boolean(input.straps),
+        );
+        if (match) return NextResponse.json({ weight_block: match, reused: true });
+
         const { data, error } = await db
           .from("snatch_blocks")
           .insert({
@@ -924,6 +955,58 @@ export async function POST(request: Request) {
           .single();
         if (blockError) throw blockError;
         return NextResponse.json({ attempt: data, weight_block: block });
+      }
+
+      case "update_snatch_attempt": {
+        const patch: Record<string, unknown> = {};
+        if (input.outcome !== undefined) patch.outcome = input.outcome;
+        if (input.quality_10 !== undefined) patch.quality_10 = input.quality_10;
+        if (input.failure_mode_id !== undefined) {
+          patch.failure_mode_id = input.failure_mode_id;
+        }
+        if (input.notes !== undefined) patch.notes = input.notes;
+
+        const { data, error } = await db
+          .from("snatch_attempts")
+          .update(patch)
+          .eq("id", input.attempt_id)
+          .select()
+          .single();
+        if (error) throw error;
+
+        // The trigger has already corrected the block's counters.
+        const { data: block, error: blockError } = await db
+          .from("snatch_blocks")
+          .select("*")
+          .eq("id", data.block_id)
+          .single();
+        if (blockError) throw blockError;
+        return NextResponse.json({ attempt: data, weight_block: block });
+      }
+
+      case "delete_snatch_attempt": {
+        const { data: attempt, error: readError } = await db
+          .from("snatch_attempts")
+          .select("block_id")
+          .eq("id", input.attempt_id)
+          .maybeSingle();
+        if (readError) throw readError;
+        if (!attempt) {
+          return NextResponse.json({ error: "No such attempt." }, { status: 404 });
+        }
+        const { error } = await db
+          .from("snatch_attempts")
+          .delete()
+          .eq("id", input.attempt_id);
+        if (error) throw error;
+
+        const { data: block, error: blockError } = await db
+          .from("snatch_blocks")
+          .select("*")
+          .eq("id", attempt.block_id)
+          .single();
+        if (blockError) throw blockError;
+        return NextResponse.json({ deleted: input.attempt_id, weight_block: block });
       }
 
       case "undo_attempt": {
