@@ -71,24 +71,85 @@
 
 
 /*
-  Group colours for the set list. Five hues assigned to muscle groups in a
-  fixed order and reused beyond five — never generated per exercise, which
-  would make two leg movements look unrelated.
+  Signal: one hue per workstream, one hue per muscle family, and a lightness
+  step inside each family for the individual muscle. Colour stops being
+  decoration and starts telling you which discipline, and which family, you
+  are looking at.
 
-  Validated with the dataviz palette checker in both modes: lightness band,
-  chroma floor, adjacent-pair CVD separation (worst 8.8 deutan), normal-vision
-  separation and contrast against the surface all pass. The first attempt
-  failed on three of those, which is why the numbers here are not round.
+  The two ramps run in opposite directions because the backgrounds do. On the
+  light theme a colour has to be DARK to be legible, so the family steps
+  downwards; on the dark theme it has to be light, so it steps upwards. Both
+  ramps are capped by what sRGB can actually render: cyan at hue 220 leaves
+  the gamut below L 0.56, which is why snatch carries less chroma than the
+  rest rather than being quietly clipped by the browser.
 
-  They are a grouping aid, not an encoding: every row carries its exercise
-  name, so nothing depends on telling the colours apart.
+  Checked in both themes, against --surface, --surface-2 and the 8% self-tint
+  an active chip sits on: every token clears 4.5:1 as text in all three. The
+  first draft of this palette did not — it failed on eight colours, worst
+  2.83:1, which is why these numbers are not round.
+
+  What they do NOT do is survive colour-blindness as an encoding. Within a
+  family the members differ only in lightness, so for a deutan viewer lats
+  and mid-back are near-identical (dE 1.5). That is accepted deliberately:
+  every stripe, chip and row here carries its own written name, so the colour
+  groups things that are already labelled. Nothing in the app asks you to
+  tell two of these apart to read a number.
 */
 :root {
-  --grp-1: #3b7ad9;
-  --grp-2: #c2762f;
-  --grp-3: #8a63c9;
-  --grp-4: #00a3b0;
-  --grp-5: #c45975;
+  --ws-snatch:       oklch(0.50 0.085 220);
+  --ws-calisthenics: oklch(0.48 0.12 150);
+  --ws-hypertrophy:  oklch(0.52 0.13 320);
+
+  /* Family = hue; muscle = a lightness step inside it. */
+  --mg-shoulders:  oklch(0.52 0.13 28);
+  --mg-chest:      oklch(0.46 0.13 28);
+  --mg-triceps:    oklch(0.40 0.12 28);
+  --mg-lats:       oklch(0.50 0.13 255);
+  --mg-mid_back:   oklch(0.45 0.13 255);
+  --mg-biceps:     oklch(0.40 0.13 255);
+  --mg-calves:     oklch(0.49 0.13 145);
+  --mg-hamstrings: oklch(0.445 0.13 145);
+  --mg-quads:      oklch(0.40 0.12 145);
+  --mg-glutes:     oklch(0.355 0.11 145);
+  --mg-core:       oklch(0.50 0.10 90);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ws-snatch:       oklch(0.74 0.13 220);
+    --ws-calisthenics: oklch(0.74 0.13 150);
+    --ws-hypertrophy:  oklch(0.74 0.13 320);
+
+    --mg-shoulders:  oklch(0.77 0.13 28);
+    --mg-chest:      oklch(0.71 0.13 28);
+    --mg-triceps:    oklch(0.67 0.13 28);
+    --mg-lats:       oklch(0.74 0.12 255);
+    --mg-mid_back:   oklch(0.69 0.13 255);
+    --mg-biceps:     oklch(0.65 0.13 255);
+    --mg-calves:     oklch(0.83 0.13 145);
+    --mg-hamstrings: oklch(0.77 0.13 145);
+    --mg-quads:      oklch(0.71 0.13 145);
+    --mg-glutes:     oklch(0.67 0.13 145);
+    --mg-core:       oklch(0.72 0.13 90);
+  }
+}
+
+:root[data-theme="dark"] {
+    --ws-snatch:       oklch(0.74 0.13 220);
+    --ws-calisthenics: oklch(0.74 0.13 150);
+    --ws-hypertrophy:  oklch(0.74 0.13 320);
+
+    --mg-shoulders:  oklch(0.77 0.13 28);
+    --mg-chest:      oklch(0.71 0.13 28);
+    --mg-triceps:    oklch(0.67 0.13 28);
+    --mg-lats:       oklch(0.74 0.12 255);
+    --mg-mid_back:   oklch(0.69 0.13 255);
+    --mg-biceps:     oklch(0.65 0.13 255);
+    --mg-calves:     oklch(0.83 0.13 145);
+    --mg-hamstrings: oklch(0.77 0.13 145);
+    --mg-quads:      oklch(0.71 0.13 145);
+    --mg-glutes:     oklch(0.67 0.13 145);
+    --mg-core:       oklch(0.72 0.13 90);
 }
 
 @theme inline {

@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
-import { Pill, SectionTitle } from "@/components/ui";
+import { Pill, SectionTitle, wsColour } from "@/components/ui";
 import { londonTime } from "@/lib/time";
 import type {
   SnatchBlock,
@@ -249,6 +249,7 @@ export function SnatchLogger({
     <div className="space-y-4">
       <div>
         <SectionTitle
+          tone={wsColour("snatch")}
           aside={
             sessionTally.attempts > 0 ? (
               <span className="tnum">
@@ -284,8 +285,8 @@ export function SnatchLogger({
             aria-pressed={straps}
             className="min-h-[40px] rounded-[var(--radius)] border px-3 text-sm font-medium"
             style={{
-              borderColor: straps ? "var(--accent)" : "var(--border)",
-              color: straps ? "var(--accent)" : "var(--text-dim)",
+              borderColor: straps ? wsColour("snatch") : "var(--border)",
+              color: straps ? wsColour("snatch") : "var(--text-dim)",
             }}
           >
             Straps {straps ? "on" : "off"}
@@ -305,7 +306,7 @@ export function SnatchLogger({
                 onClick={() => openWeight(weight)}
                 className="tnum min-h-[44px] rounded-[var(--radius)] border text-sm font-semibold disabled:opacity-40"
                 style={{
-                  borderColor: inLadder ? "var(--accent)" : "var(--border)",
+                  borderColor: inLadder ? wsColour("snatch") : "var(--border)",
                   background: "var(--surface-2)",
                 }}
               >
@@ -335,7 +336,7 @@ export function SnatchLogger({
       {openBlock ? (
         <div
           className="rounded-[var(--radius)] border p-2.5"
-          style={{ borderColor: "var(--accent)", background: "var(--surface-2)" }}
+          style={{ borderColor: wsColour("snatch"), background: "var(--surface-2)" }}
         >
           <div className="mb-2 flex items-baseline justify-between">
             <div className="tnum text-xl font-bold">
@@ -407,8 +408,8 @@ export function SnatchLogger({
                   className="tnum h-8 flex-1 rounded-md border text-[11px] font-semibold disabled:opacity-40"
                   style={{
                     borderColor:
-                      openBlock.quality_10 === n ? "var(--accent)" : "var(--border)",
-                    color: openBlock.quality_10 === n ? "var(--accent)" : "var(--text-faint)",
+                      openBlock.quality_10 === n ? wsColour("snatch") : "var(--border)",
+                    color: openBlock.quality_10 === n ? wsColour("snatch") : "var(--text-faint)",
                   }}
                 >
                   {n}

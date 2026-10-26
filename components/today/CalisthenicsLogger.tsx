@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
-import { SectionTitle } from "@/components/ui";
+import { Chip, SectionTitle, wsColour } from "@/components/ui";
 import type {
   AssistanceType,
   CalisthenicsEntry,
@@ -170,25 +170,23 @@ export function CalisthenicsLogger({
 
   return (
     <div className="space-y-3">
-      <SectionTitle aside={entries.length > 0 ? `${entries.length} logged` : null}>
+      <SectionTitle
+        tone={wsColour("calisthenics")}
+        aside={entries.length > 0 ? `${entries.length} logged` : null}
+      >
         Calisthenics
       </SectionTitle>
 
       <div className="flex flex-wrap gap-1.5">
         {(showAll ? variations : recent).map((v) => (
-          <button
+          <Chip
             key={v.id}
-            type="button"
+            on={v.id === variationId}
+            hue={wsColour("calisthenics")}
             onClick={() => choose(v.id)}
-            aria-pressed={v.id === variationId}
-            className="min-h-[36px] rounded-full border px-3 text-xs font-semibold"
-            style={{
-              borderColor: v.id === variationId ? "var(--accent)" : "var(--border)",
-              color: v.id === variationId ? "var(--accent)" : "var(--text-dim)",
-            }}
           >
             {v.name}
-          </button>
+          </Chip>
         ))}
         <button
           type="button"
@@ -202,7 +200,7 @@ export function CalisthenicsLogger({
       {variation ? (
         <div
           className="rounded-[var(--radius)] border p-3"
-          style={{ borderColor: "var(--accent)", background: "var(--surface-2)" }}
+          style={{ borderColor: wsColour("calisthenics"), background: "var(--surface-2)" }}
         >
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -323,7 +321,8 @@ export function CalisthenicsLogger({
                 key={entry.id}
                 className="flex items-center gap-1 rounded-[var(--radius)] border px-1 py-1"
                 style={{
-                  borderColor: editingId === entry.id ? "var(--accent)" : "var(--border)",
+                  borderColor:
+                    editingId === entry.id ? wsColour("calisthenics") : "var(--border)",
                 }}
               >
                 {/* The row is the edit control, as the set tiles are. */}

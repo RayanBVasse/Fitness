@@ -1,29 +1,86 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import type { Workstream } from "@/lib/types";
 
 export function Card({
   children,
   className = "",
+  style,
 }: {
   children: ReactNode;
   className?: string;
+  style?: CSSProperties;
 }) {
   return (
     <section
       className={`rounded-[var(--radius)] border border-border bg-surface p-4 ${className}`}
+      style={style}
     >
       {children}
     </section>
   );
 }
 
-export function SectionTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+export function SectionTitle({
+  children,
+  aside,
+  tone,
+}: {
+  children: ReactNode;
+  aside?: ReactNode;
+  /** A CSS colour, normally a workstream token, when the section has a hue. */
+  tone?: string;
+}) {
   return (
     <div className="mb-3 flex items-baseline justify-between gap-3">
-      <h2 className="text-[11px] font-bold uppercase tracking-[0.08em] text-text-dim">
+      <h2
+        className="text-[11px] font-bold uppercase tracking-[0.08em]"
+        style={{ color: tone ?? "var(--text-dim)" }}
+      >
         {children}
       </h2>
       {aside ? <div className="text-[11px] text-text-faint">{aside}</div> : null}
     </div>
+  );
+}
+
+/**
+ * A workstream's colour, and a muscle's. Both fall back to the neutral border
+ * rather than resolving to nothing: an exercise with no muscle group, or a
+ * group seeded after these tokens were written, must still render.
+ */
+export const wsColour = (workstream: Workstream) =>
+  `var(--ws-${workstream}, var(--text-dim))`;
+export const mgColour = (slug?: string | null) =>
+  slug ? `var(--mg-${slug}, var(--border))` : "var(--border)";
+
+/**
+ * An outline chip that lights up in its own hue when on.
+ *
+ * The on state is an 8% wash rather than a fill. A fill would put the hue
+ * behind text of the same hue and cost about a point of contrast, which the
+ * lighter end of each family cannot spare.
+ */
+export function Chip({
+  on,
+  hue = "var(--text)",
+  className = "",
+  children,
+  ...rest
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { on: boolean; hue?: string }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      {...rest}
+      className={`min-h-[38px] rounded-full border px-3 text-xs font-semibold disabled:opacity-40 ${className}`}
+      style={{
+        borderColor: on ? hue : `color-mix(in oklab, ${hue} 32%, transparent)`,
+        background: on ? `color-mix(in oklab, ${hue} 8%, transparent)` : "transparent",
+        color: on ? hue : "var(--text-dim)",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

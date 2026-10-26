@@ -7,7 +7,7 @@ import { SnatchLogger } from "@/components/today/SnatchLogger";
 import { DailyCheckIn } from "@/components/today/DailyCheckIn";
 import { HypertrophyLogger } from "@/components/today/HypertrophyLogger";
 import { CalisthenicsLogger } from "@/components/today/CalisthenicsLogger";
-import { Card, Pill, SectionTitle } from "@/components/ui";
+import { Card, Chip, Pill, SectionTitle, wsColour } from "@/components/ui";
 import { isoWeekday, londonTime, longDate, weekdayName, daysBetween } from "@/lib/time";
 import {
   WORKSTREAM_LABELS,
@@ -66,6 +66,19 @@ type Props = {
 };
 
 const WORKSTREAMS: Workstream[] = ["snatch", "calisthenics", "hypertrophy"];
+
+/**
+ * A logger card wears its workstream: a bar across the top and a tinted
+ * border. Enough to tell the three apart while scrolling one-handed, without
+ * a colour field behind the numbers you are trying to read.
+ */
+function workstreamCard(workstream: Workstream) {
+  const hue = wsColour(workstream);
+  return {
+    borderColor: `color-mix(in oklab, ${hue} 35%, var(--border))`,
+    boxShadow: `inset 0 3px 0 ${hue}`,
+  };
+}
 
 export function TodayScreen({
   date,
@@ -312,9 +325,9 @@ export function TodayScreen({
                 {gyms.map((gym) => {
                   const on = session.gym_id === gym.id;
                   return (
-                    <button
+                    <Chip
                       key={gym.id}
-                      type="button"
+                      on={on}
                       disabled={!canWrite || busy}
                       onClick={() =>
                         run(async () => {
@@ -325,16 +338,9 @@ export function TodayScreen({
                           });
                         })
                       }
-                      aria-pressed={on}
-                      className="min-h-[38px] rounded-full border px-3 text-xs font-semibold disabled:opacity-40"
-                      style={{
-                        borderColor: on ? "var(--accent)" : "var(--border)",
-                        color: on ? "var(--accent)" : "var(--text-dim)",
-                        background: on ? "var(--surface-2)" : "transparent",
-                      }}
                     >
                       {gym.name}
-                    </button>
+                    </Chip>
                   );
                 })}
               </div>
@@ -367,9 +373,11 @@ export function TodayScreen({
                 {WORKSTREAMS.map((workstream) => {
                   const existing = sessionBlocks.find((b) => b.workstream === workstream);
                   return (
-                    <button
+                    <Chip
                       key={workstream}
-                      type="button"
+                      on={Boolean(existing)}
+                      hue={wsColour(workstream)}
+                      className="disabled:!opacity-100"
                       disabled={!canWrite || busy || Boolean(existing)}
                       onClick={() =>
                         run(async () => {
@@ -380,16 +388,10 @@ export function TodayScreen({
                           });
                         })
                       }
-                      className="min-h-[38px] rounded-full border px-3 text-xs font-semibold disabled:opacity-100"
-                      style={{
-                        borderColor: existing ? "var(--accent)" : "var(--border)",
-                        color: existing ? "var(--accent)" : "var(--text-dim)",
-                        background: existing ? "var(--surface-2)" : "transparent",
-                      }}
                     >
                       {existing ? "" : "+ "}
                       {WORKSTREAM_LABELS[workstream]}
-                    </button>
+                    </Chip>
                   );
                 })}
               </div>
@@ -400,7 +402,7 @@ export function TodayScreen({
 
           </Card>
 
-          <Card>
+          <Card style={workstreamCard("snatch")}>
             {/* Keyed on the session: the logger seeds its state from these
                 blocks on mount, so switching visits must remount it rather
                 than leave the previous visit's blocks on screen. */}
@@ -416,7 +418,7 @@ export function TodayScreen({
             />
           </Card>
 
-          <Card>
+          <Card style={workstreamCard("hypertrophy")}>
             <HypertrophyLogger
               key={`h-${session.id}`}
               sessionId={session.id}
@@ -431,7 +433,7 @@ export function TodayScreen({
             />
           </Card>
 
-          <Card>
+          <Card style={workstreamCard("calisthenics")}>
             <CalisthenicsLogger
               key={`c-${session.id}`}
               sessionId={session.id}

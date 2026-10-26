@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
-import { SectionTitle } from "@/components/ui";
+import { Chip, SectionTitle, mgColour, wsColour } from "@/components/ui";
 import type {
   Exercise,
   HypertrophySet,
@@ -65,6 +65,10 @@ export function HypertrophyLogger({
 
   const byId = useMemo(() => new Map(exercises.map((e) => [e.id, e])), [exercises]);
   const exercise = exerciseId === null ? null : (byId.get(exerciseId) ?? null);
+  const slugOf = (id: number | null | undefined) =>
+    muscleGroups.find((g) => g.id === id)?.slug ?? null;
+  /** The colour of whatever is being logged right now. */
+  const activeColour = mgColour(slugOf(exercise?.muscle_group_id));
 
   /** Same gym first; the exercise anywhere is a weaker but useful fallback. */
   function lastFor(id: number): { setting: LastExerciseSetting; sameGym: boolean } | null {
@@ -204,16 +208,19 @@ export function HypertrophyLogger({
     group.volume += Number(set.volume_load_kg ?? 0);
   }
 
-  /** Fixed order by muscle group, reused past five. Never per exercise. */
+  /**
+   * The muscle's own colour, not a slot in a rotation. Two leg movements now
+   * read as the same family wherever they appear, and adding an exercise
+   * cannot shuffle the colours of the ones already logged.
+   */
   function groupColour(muscleGroupId: number | null): string {
-    if (muscleGroupId === null) return "var(--border)";
-    const index = muscleGroups.findIndex((g) => g.id === muscleGroupId);
-    return `var(--grp-${(index < 0 ? 0 : index) % 5 + 1})`;
+    return mgColour(slugOf(muscleGroupId));
   }
 
   return (
     <div className="space-y-3">
       <SectionTitle
+        tone={wsColour("hypertrophy")}
         aside={
           sets.length > 0 ? (
             <span className="tnum">
@@ -229,19 +236,14 @@ export function HypertrophyLogger({
       {/* What you actually use, not 27 rows in alphabetical order. */}
       <div className="flex flex-wrap gap-1.5">
         {(showAll ? exercises : recent).map((e) => (
-          <button
+          <Chip
             key={e.id}
-            type="button"
+            on={e.id === exerciseId}
+            hue={mgColour(slugOf(e.muscle_group_id))}
             onClick={() => choose(e.id)}
-            aria-pressed={e.id === exerciseId}
-            className="min-h-[36px] rounded-full border px-3 text-xs font-semibold"
-            style={{
-              borderColor: e.id === exerciseId ? "var(--accent)" : "var(--border)",
-              color: e.id === exerciseId ? "var(--accent)" : "var(--text-dim)",
-            }}
           >
             {e.name}
-          </button>
+          </Chip>
         ))}
         <button
           type="button"
@@ -255,7 +257,7 @@ export function HypertrophyLogger({
       {exercise ? (
         <div
           className="rounded-[var(--radius)] border p-3"
-          style={{ borderColor: "var(--accent)", background: "var(--surface-2)" }}
+          style={{ borderColor: activeColour, background: "var(--surface-2)" }}
         >
           <div className="flex items-baseline justify-between gap-2">
             <div className="font-semibold">{exercise.name}</div>
@@ -324,6 +326,7 @@ export function HypertrophyLogger({
                     editing?.setId === set.id ? (
                       <SetEditor
                         key={set.id}
+                        hue={colour}
                         label={group.name}
                         load={editLoad}
                         reps={editReps}
@@ -373,6 +376,7 @@ export function HypertrophyLogger({
                       unchanged, or change the load or the reps first. */}
                   {editing?.setId === null && editing.exerciseId === group.exerciseId ? (
                     <SetEditor
+                      hue={colour}
                       label={group.name}
                       load={editLoad}
                       reps={editReps}
@@ -390,9 +394,9 @@ export function HypertrophyLogger({
                       aria-label={`Add another set of ${group.name}`}
                       className="min-h-[44px] min-w-[44px] rounded-md border px-2 text-sm font-bold disabled:opacity-40"
                       style={{
-                        borderColor: "var(--accent)",
-                        color: "var(--accent)",
-                        background: "color-mix(in oklab, var(--accent) 14%, transparent)",
+                        borderColor: colour,
+                        color: colour,
+                        background: `color-mix(in oklab, ${colour} 10%, transparent)`,
                       }}
                     >
                       +
@@ -425,6 +429,7 @@ export function HypertrophyLogger({
  */
 function SetEditor({
   label,
+  hue,
   load,
   reps,
   disabled,
@@ -434,6 +439,7 @@ function SetEditor({
   onCancel,
 }: {
   label: string;
+  hue: string;
   load: string;
   reps: string;
   disabled: boolean;
@@ -458,7 +464,7 @@ function SetEditor({
   return (
     <div
       className="flex items-center gap-1 rounded-md border px-1.5 py-1"
-      style={{ borderColor: "var(--accent)", background: "var(--surface-2)" }}
+      style={{ borderColor: hue, background: "var(--surface-2)" }}
     >
       <input
         autoFocus
