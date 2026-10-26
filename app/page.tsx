@@ -42,6 +42,7 @@ export default async function TodayPage() {
       variations={reference.variations}
       ladder={reference.ladder}
       objective={reference.objective}
+      weekdayThemes={reference.weekdayThemes}
     />
   );
 }

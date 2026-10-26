@@ -1,5 +1,5 @@
 import { readClient } from "@/lib/supabase";
-import { londonToday, weekStart } from "@/lib/time";
+import { isoWeekday, londonToday, weekStart } from "@/lib/time";
 
 /**
  * Layer A — deterministic analytics.
@@ -413,6 +413,62 @@ async function approvedNotes(args: { from?: string; to?: string; search?: string
 }
 
 // ---------------------------------------------------------------------------
+// weekly_plan — the stated intention beside what actually happened
+// ---------------------------------------------------------------------------
+async function weeklyPlan(args: { days?: number }): Promise<ToolResult> {
+  const window = windowFrom(args.days ?? 56);
+  const db = readClient();
+
+  const [themesRow, sessions] = await Promise.all([
+    db.from("settings").select("value").eq("key", "weekday_themes").maybeSingle(),
+    db
+      .from("v_session_summary")
+      .select("session_date, workstreams")
+      .gte("session_date", window.from)
+      .lte("session_date", window.to),
+  ]);
+  if (sessions.error) throw new Error(sessions.error.message);
+
+  const themes = (themesRow.data?.value ?? {}) as Record<
+    string,
+    { name: string; focus: string | null; emphasis: string | null }
+  >;
+
+  const byWeekday = new Map<number, { dates: string[]; withFocus: number }>();
+  for (const session of sessions.data ?? []) {
+    const dow = isoWeekday(session.session_date);
+    const entry = byWeekday.get(dow) ?? { dates: [], withFocus: 0 };
+    if (!entry.dates.includes(session.session_date)) entry.dates.push(session.session_date);
+    const focus = themes[String(dow)]?.focus;
+    if (focus && (session.workstreams ?? []).includes(focus)) entry.withFocus += 1;
+    byWeekday.set(dow, entry);
+  }
+
+  const rows = Object.entries(themes).map(([dow, theme]) => {
+    const actual = byWeekday.get(Number(dow)) ?? { dates: [], withFocus: 0 };
+    return {
+      iso_weekday: Number(dow),
+      theme: theme.name,
+      intended_focus: theme.focus,
+      emphasis: theme.emphasis,
+      sessions_on_that_weekday: actual.dates.length,
+      sessions_matching_focus: theme.focus ? actual.withFocus : null,
+    };
+  });
+
+  const total = rows.reduce((sum, r) => sum + r.sessions_on_that_weekday, 0);
+  return {
+    tool: "weekly_plan",
+    window,
+    n: total,
+    insufficient: total < 4,
+    note:
+      "These are stated intentions, not obligations. A week that departs from them is a question, not a failing — training to how the body turns up on the day is the athlete's stated preference. Weekdays with no theme have no stated intention, which is different from having no plan.",
+    data: { themes: rows },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
 type Executor = (args: Record<string, never>) => Promise<ToolResult>;
@@ -503,6 +559,20 @@ export const TOOLS: Record<string, { schema: AnthropicTool; run: Executor }> = {
       },
     },
     run: exerciseProgress as unknown as Executor,
+  },
+  weekly_plan: {
+    schema: {
+      name: "weekly_plan",
+      description:
+        "The athlete's stated weekday themes (Massive Mondays, Technique Tuesdays, Workhorse Wednesdays, Form Fridays) beside how many sessions on each weekday actually included the intended focus.",
+      input_schema: {
+        type: "object",
+        properties: { days: { type: "number" } },
+        required: [],
+        additionalProperties: false,
+      },
+    },
+    run: weeklyPlan as unknown as Executor,
   },
   approved_notes: {
     schema: {

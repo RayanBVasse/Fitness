@@ -27,6 +27,7 @@ import type {
   SnatchSuccessByWeight,
   SnatchSuccessBySource,
   SnatchVariation,
+  WeekdayThemes,
   SnatchTag,
   WarmupLadder,
   WeightPreset,
@@ -117,6 +118,7 @@ export async function getReferenceData() {
     assistanceTypes: assistanceTypes.data ?? [],
     objective: (settingsMap.get("snatch_objective") as SnatchObjective | undefined) ?? null,
     ladder: (settingsMap.get("snatch_warmup_ladder") as WarmupLadder | undefined) ?? null,
+    weekdayThemes: (settingsMap.get("weekday_themes") as WeekdayThemes | undefined) ?? {},
     heavyThresholdKg: (settingsMap.get("heavy_session_threshold_kg") as number | undefined) ?? null,
     error: gyms.error ?? variations.error ?? presets.error ?? settings.error,
   };

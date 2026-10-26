@@ -8,7 +8,7 @@ import { DailyCheckIn } from "@/components/today/DailyCheckIn";
 import { HypertrophyLogger } from "@/components/today/HypertrophyLogger";
 import { CalisthenicsLogger } from "@/components/today/CalisthenicsLogger";
 import { Card, Pill, SectionTitle } from "@/components/ui";
-import { londonTime, longDate, weekdayName, daysBetween } from "@/lib/time";
+import { isoWeekday, londonTime, longDate, weekdayName, daysBetween } from "@/lib/time";
 import {
   WORKSTREAM_LABELS,
   type AssistanceType,
@@ -30,6 +30,7 @@ import {
   type DailyMetricDef,
   type DayRecord,
   type SnatchVariation,
+  type WeekdayThemes,
   type WarmupLadder,
   type WeightPreset,
   type Workstream,
@@ -61,6 +62,7 @@ type Props = {
   variations: SnatchVariation[];
   ladder: WarmupLadder | null;
   objective: SnatchObjective | null;
+  weekdayThemes: WeekdayThemes;
 };
 
 const WORKSTREAMS: Workstream[] = ["snatch", "calisthenics", "hypertrophy"];
@@ -91,6 +93,7 @@ export function TodayScreen({
   variations,
   ladder,
   objective,
+  weekdayThemes,
 }: Props) {
   const router = useRouter();
   // Reaching this screen at all means the middleware accepted a session, so
@@ -98,6 +101,8 @@ export function TodayScreen({
   const canWrite = true;
   // You usually go back to the same gym, so that is the default rather than
   // a blank. Changing it is one tap.
+  const theme = weekdayThemes[String(isoWeekday(date))] ?? null;
+
   const [gymId, setGymId] = useState<number | null>(
     () => gyms.find((g) => g.name === lastSession?.gym)?.id ?? null,
   );
@@ -137,6 +142,16 @@ export function TodayScreen({
           {weekdayName(date)}
         </div>
         <h1 className="text-2xl font-bold leading-tight">{longDate(date)}</h1>
+        {theme ? (
+          <p className="mt-0.5 text-sm">
+            <span className="font-semibold" style={{ color: "var(--accent)" }}>
+              {theme.name}
+            </span>
+            {theme.emphasis ? (
+              <span className="text-text-dim"> · {theme.emphasis}</span>
+            ) : null}
+          </p>
+        ) : null}
       </header>
 
       {objective ? (

@@ -23,6 +23,7 @@ export default async function SettingsPage() {
   const rows = settings.data ?? [];
   const rules = rows.find((r) => r.key === "progression_rules");
   const guardrails = rows.find((r) => r.key === "analysis_guardrails");
+  const themes = rows.find((r) => r.key === "weekday_themes");
 
   return (
     <div className="space-y-4 pt-5">
@@ -78,6 +79,37 @@ export default async function SettingsPage() {
         </Card>
       ) : null}
 
+      {themes ? (
+        <Card>
+          <SectionTitle>The week</SectionTitle>
+          <p className="text-xs leading-snug text-text-dim">{themes.notes}</p>
+          <ul className="mt-3 space-y-1.5">
+            {WEEKDAYS.map((label, index) => {
+              const theme = (themes.value as Record<string, { name?: string; emphasis?: string }>)[
+                String(index + 1)
+              ];
+              return (
+                <li key={label} className="flex items-baseline gap-2 text-sm">
+                  <span className="w-10 shrink-0 text-[11px] uppercase tracking-wide text-text-faint">
+                    {label}
+                  </span>
+                  {theme ? (
+                    <>
+                      <span className="font-semibold">{theme.name}</span>
+                      {theme.emphasis ? (
+                        <span className="text-[11px] text-text-dim">{theme.emphasis}</span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <span className="text-[11px] text-text-faint">no stated intention</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      ) : null}
+
       <Card>
         <SectionTitle>Context notes</SectionTitle>
         <p className="text-sm text-text-dim">
@@ -107,6 +139,8 @@ export default async function SettingsPage() {
     </div>
   );
 }
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function Row({ label, value }: { label: string; value: string | number }) {
   return (

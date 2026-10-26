@@ -45,6 +45,12 @@ export function longDate(isoDate: string): string {
   }).format(parseIsoDate(isoDate));
 }
 
+/** ISO weekday for a date string: 1 = Monday … 7 = Sunday. */
+export function isoWeekday(isoDate: string): number {
+  const day = parseIsoDate(isoDate).getUTCDay();
+  return day === 0 ? 7 : day;
+}
+
 /** Monday of the ISO week containing the given date. */
 export function weekStart(isoDate: string): string {
   const d = parseIsoDate(isoDate);

@@ -88,6 +88,16 @@ export interface SnatchTag {
   is_active: boolean;
 }
 
+/** settings.weekday_themes, keyed by ISO weekday as a string ("1" = Monday). */
+export interface WeekdayTheme {
+  name: string;
+  focus: Workstream | null;
+  emphasis: string | null;
+  note: string | null;
+}
+
+export type WeekdayThemes = Record<string, WeekdayTheme>;
+
 export type NoteReviewStatus = "pending" | "approved" | "rejected";
 
 export interface ContextNote {
