@@ -16,8 +16,13 @@ import type {
  *
  * The load and reps are prefilled from the last time this exercise was done
  * at this gym — machine identity is (gym, exercise), so Ealing's pendulum
- * squat does not offer Greenford's number. Repeating a set is one tap, which
- * is what most sets are.
+ * squat does not offer Greenford's number.
+ *
+ * Every set is editable, before and after it is saved. The `+` on a block
+ * opens the next set already filled in with the last one's numbers: confirm it
+ * unchanged, or change the load or the reps first. Most sets repeat, but the
+ * ones that matter are the ones that do not, and a logger that can only repeat
+ * quietly pushes you towards recording a number you did not lift.
  */
 
 type Props = {
@@ -49,6 +54,12 @@ export function HypertrophyLogger({
   const [load, setLoad] = useState<string>("");
   const [reps, setReps] = useState<string>("");
   const [showAll, setShowAll] = useState(false);
+  /** Which tile is open for editing: an existing set, or a new one on a block. */
+  const [editing, setEditing] = useState<{ setId: string | null; exerciseId: number } | null>(
+    null,
+  );
+  const [editLoad, setEditLoad] = useState("");
+  const [editReps, setEditReps] = useState("");
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -86,20 +97,71 @@ export function HypertrophyLogger({
     });
   }
 
-  function addSet(from?: HypertrophySet) {
-    const payloadExercise = from?.exercise_id ?? exerciseId;
-    if (payloadExercise === null) return;
+  function addSet() {
+    if (exerciseId === null) return;
     run(async () => {
       const result = await write<{ set: HypertrophySet }>({
         action: "log_hypertrophy_set",
         session_id: sessionId,
         session_block_id: sessionBlockId,
-        exercise_id: payloadExercise,
-        load_kg: from ? from.load_kg : load === "" ? null : Number(load),
-        reps: from ? from.reps : reps === "" ? null : Number(reps),
-        side: from?.side ?? "both",
+        exercise_id: exerciseId,
+        load_kg: load === "" ? null : Number(load),
+        reps: reps === "" ? null : Number(reps),
+        side: "both",
       });
       setSets((prev) => [...prev, result.set]);
+    });
+  }
+
+  /** The next set, opened at the last one's numbers rather than assuming them. */
+  function openNext(previous: HypertrophySet) {
+    setError(null);
+    setEditing({ setId: null, exerciseId: previous.exercise_id });
+    setEditLoad(previous.load_kg != null ? String(Number(previous.load_kg)) : "");
+    setEditReps(previous.reps != null ? String(previous.reps) : "");
+  }
+
+  function openEdit(set: HypertrophySet) {
+    setError(null);
+    setEditing({ setId: set.id, exerciseId: set.exercise_id });
+    setEditLoad(set.load_kg != null ? String(Number(set.load_kg)) : "");
+    setEditReps(set.reps != null ? String(set.reps) : "");
+  }
+
+  function commitEdit() {
+    const current = editing;
+    if (!current) return;
+    const nextLoad = editLoad.trim() === "" ? null : Number(editLoad);
+    const nextReps = editReps.trim() === "" ? null : Number(editReps);
+    if (
+      (nextLoad !== null && !Number.isFinite(nextLoad)) ||
+      (nextReps !== null && !Number.isFinite(nextReps))
+    ) {
+      setError("Load and reps have to be numbers, or left empty.");
+      return;
+    }
+    run(async () => {
+      if (current.setId) {
+        const result = await write<{ set: HypertrophySet }>({
+          action: "update_hypertrophy_set",
+          set_id: current.setId,
+          load_kg: nextLoad,
+          reps: nextReps,
+        });
+        setSets((prev) => prev.map((s) => (s.id === current.setId ? result.set : s)));
+      } else {
+        const result = await write<{ set: HypertrophySet }>({
+          action: "log_hypertrophy_set",
+          session_id: sessionId,
+          session_block_id: sessionBlockId,
+          exercise_id: current.exerciseId,
+          load_kg: nextLoad,
+          reps: nextReps,
+          side: "both",
+        });
+        setSets((prev) => [...prev, result.set]);
+      }
+      setEditing(null);
     });
   }
 
@@ -119,6 +181,7 @@ export function HypertrophyLogger({
   const groups: {
     key: string;
     name: string;
+    exerciseId: number;
     muscleGroupId: number | null;
     sets: HypertrophySet[];
     volume: number;
@@ -130,6 +193,7 @@ export function HypertrophyLogger({
       group = {
         key: `e${set.exercise_id}`,
         name: exercise?.name ?? "Exercise",
+        exerciseId: set.exercise_id,
         muscleGroupId: exercise?.muscle_group_id ?? null,
         sets: [],
         volume: 0,
@@ -255,50 +319,85 @@ export function HypertrophyLogger({
                   </span>
                 </div>
 
-                <div className="flex flex-wrap gap-1 p-2">
-                  {group.sets.map((set) => (
-                    <div
-                      key={set.id}
-                      className="relative rounded-md border border-border px-2 py-1 text-center"
-                      style={{ background: "var(--surface-2)" }}
-                    >
-                      <div className="tnum text-sm font-semibold leading-tight">
-                        {set.load_kg != null ? Number(set.load_kg) : "—"}
-                        <span className="text-[10px] font-normal text-text-faint"> kg</span>
-                      </div>
-                      <div className="tnum text-[10px] leading-tight text-text-dim">
-                        × {set.reps ?? "—"}
-                        {set.is_drop ? " drop" : ""}
-                      </div>
-                      <button
-                        type="button"
+                <div className="flex flex-wrap items-center gap-1 p-2">
+                  {group.sets.map((set) =>
+                    editing?.setId === set.id ? (
+                      <SetEditor
+                        key={set.id}
+                        label={group.name}
+                        load={editLoad}
+                        reps={editReps}
                         disabled={!canWrite || busy}
-                        onClick={() => remove(set.id)}
-                        aria-label={`Delete this set of ${group.name}`}
-                        className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-border text-[9px] leading-none text-text-faint disabled:opacity-40"
-                        style={{ background: "var(--surface)" }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
+                        onLoad={setEditLoad}
+                        onReps={setEditReps}
+                        onCommit={commitEdit}
+                        onCancel={() => setEditing(null)}
+                      />
+                    ) : (
+                      <div key={set.id} className="relative">
+                        {/* The tile is the edit control. A set logged at the
+                            wrong weight should be correctable where you read
+                            it, not deleted and retyped. */}
+                        <button
+                          type="button"
+                          disabled={!canWrite || busy}
+                          onClick={() => openEdit(set)}
+                          aria-label={`Edit this set of ${group.name}`}
+                          className="rounded-md border border-border px-2 py-1 text-center disabled:opacity-40"
+                          style={{ background: "var(--surface-2)" }}
+                        >
+                          <div className="tnum text-sm font-semibold leading-tight">
+                            {set.load_kg != null ? Number(set.load_kg) : "—"}
+                            <span className="text-[10px] font-normal text-text-faint"> kg</span>
+                          </div>
+                          <div className="tnum text-[10px] leading-tight text-text-dim">
+                            × {set.reps ?? "—"}
+                            {set.is_drop ? " drop" : ""}
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!canWrite || busy}
+                          onClick={() => remove(set.id)}
+                          aria-label={`Delete this set of ${group.name}`}
+                          className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-border text-[9px] leading-none text-text-faint disabled:opacity-40"
+                          style={{ background: "var(--surface)" }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ),
+                  )}
 
-                  {/* Adds another set at the last values used for this
-                      exercise, which is what the next set usually is. */}
-                  <button
-                    type="button"
-                    disabled={!canWrite || busy}
-                    onClick={() => addSet(group.sets[group.sets.length - 1])}
-                    aria-label={`Add another set of ${group.name}`}
-                    className="min-w-[44px] rounded-md border px-2 py-1 text-sm font-bold disabled:opacity-40"
-                    style={{
-                      borderColor: "var(--accent)",
-                      color: "var(--accent)",
-                      background: "color-mix(in oklab, var(--accent) 14%, transparent)",
-                    }}
-                  >
-                    +
-                  </button>
+                  {/* The next set, opened at the last one's numbers. Confirm it
+                      unchanged, or change the load or the reps first. */}
+                  {editing?.setId === null && editing.exerciseId === group.exerciseId ? (
+                    <SetEditor
+                      label={group.name}
+                      load={editLoad}
+                      reps={editReps}
+                      disabled={!canWrite || busy}
+                      onLoad={setEditLoad}
+                      onReps={setEditReps}
+                      onCommit={commitEdit}
+                      onCancel={() => setEditing(null)}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={!canWrite || busy}
+                      onClick={() => openNext(group.sets[group.sets.length - 1])}
+                      aria-label={`Add another set of ${group.name}`}
+                      className="min-h-[44px] min-w-[44px] rounded-md border px-2 text-sm font-bold disabled:opacity-40"
+                      style={{
+                        borderColor: "var(--accent)",
+                        color: "var(--accent)",
+                        background: "color-mix(in oklab, var(--accent) 14%, transparent)",
+                      }}
+                    >
+                      +
+                    </button>
+                  )}
                 </div>
               </li>
             );
@@ -316,6 +415,98 @@ export function HypertrophyLogger({
         Volume load is a training metric, not a measurement of muscle growth. Loads are not
         comparable across gyms, because the machines differ.
       </p>
+    </div>
+  );
+}
+
+/**
+ * The inline set editor: two numbers, confirm, cancel. Enter commits and
+ * Escape backs out, because this gets used mid-set with one hand.
+ */
+function SetEditor({
+  label,
+  load,
+  reps,
+  disabled,
+  onLoad,
+  onReps,
+  onCommit,
+  onCancel,
+}: {
+  label: string;
+  load: string;
+  reps: string;
+  disabled: boolean;
+  onLoad: (value: string) => void;
+  onReps: (value: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+}) {
+  function keys(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      onCommit();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+    }
+  }
+
+  const field =
+    "tnum h-9 rounded border border-border bg-surface px-1 text-center text-sm disabled:opacity-40";
+
+  return (
+    <div
+      className="flex items-center gap-1 rounded-md border px-1.5 py-1"
+      style={{ borderColor: "var(--accent)", background: "var(--surface-2)" }}
+    >
+      <input
+        autoFocus
+        type="number"
+        inputMode="decimal"
+        step="0.5"
+        value={load}
+        disabled={disabled}
+        placeholder="kg"
+        aria-label={`Load in kg, ${label}`}
+        onFocus={(event) => event.target.select()}
+        onChange={(event) => onLoad(event.target.value)}
+        onKeyDown={keys}
+        className={`${field} w-14`}
+      />
+      <span className="text-[10px] text-text-faint">×</span>
+      <input
+        type="number"
+        inputMode="numeric"
+        step="1"
+        value={reps}
+        disabled={disabled}
+        placeholder="reps"
+        aria-label={`Reps, ${label}`}
+        onFocus={(event) => event.target.select()}
+        onChange={(event) => onReps(event.target.value)}
+        onKeyDown={keys}
+        className={`${field} w-12`}
+      />
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onCommit}
+        aria-label={`Save this set of ${label}`}
+        className="flex h-9 w-9 items-center justify-center rounded text-sm font-bold disabled:opacity-40"
+        style={{ background: "var(--accent)", color: "var(--accent-text)" }}
+      >
+        ✓
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onCancel}
+        aria-label="Cancel"
+        className="flex h-9 w-7 items-center justify-center rounded border border-border text-xs text-text-faint disabled:opacity-40"
+      >
+        ✕
+      </button>
     </div>
   );
 }

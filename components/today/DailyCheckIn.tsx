@@ -17,6 +17,10 @@ import type { DailyMetric, DailyMetricDef } from "@/lib/types";
  *
  * The dimensions come from the database, so adding one later is a row rather
  * than a change here.
+ *
+ * A 0-10 judgement is a tap on its number, not a drag: dragging a slider to
+ * exactly 7 is a fiddly act of aim, and eight of them stacked full-width was a
+ * screenful of scrolling for thirty seconds of honesty.
  */
 
 type Props = {
@@ -124,17 +128,18 @@ export function DailyCheckIn({ date, defs, saved, lastValues = [], canWrite }: P
         Daily check-in
       </SectionTitle>
 
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
         {visible.map((def) => {
           if (def.kind === "text") {
             return (
-              <TextField
-                key={def.slug}
-                def={def}
-                value={draft[def.slug]?.text ?? ""}
-                disabled={!canWrite || busy}
-                onChange={(text) => set(def.slug, { text })}
-              />
+              <div key={def.slug} className="sm:col-span-2">
+                <TextField
+                  def={def}
+                  value={draft[def.slug]?.text ?? ""}
+                  disabled={!canWrite || busy}
+                  onChange={(text) => set(def.slug, { text })}
+                />
+              </div>
             );
           }
           // A slider is right for a 0-10 judgement and wrong for a quantity:
@@ -175,8 +180,8 @@ export function DailyCheckIn({ date, defs, saved, lastValues = [], canWrite }: P
       </div>
 
       <p className="mt-2 text-[11px] leading-snug text-text-faint">
-        Everything is optional, and you can come back to it through the day. A field left alone
-        stays unrecorded rather than becoming a zero.
+        All optional, and editable through the day. An untouched field stays unrecorded rather
+        than becoming a zero; tap a selected number again to clear it.
       </p>
 
       {error ? (
@@ -230,18 +235,23 @@ function ScaleField({
 }) {
   const min = Number(def.min_value ?? 0);
   const max = Number(def.max_value ?? 10);
-  const step = Number(def.step ?? 1);
-  // An untouched slider must not look like a recorded value, so it sits at the
-  // midpoint visually while reading as "not recorded" until it is moved.
-  const position = value ?? (min + max) / 2;
+  const step = Number(def.step ?? 1) || 1;
+  const stops: number[] = [];
+  for (let v = min; v <= max + 1e-9 && stops.length <= 13; v += step) {
+    stops.push(Number(v.toFixed(2)));
+  }
+  // Up to thirteen stops fit as taps. A finer scale than that stays a slider
+  // rather than becoming a row of targets too narrow to hit.
+  const tappable = stops.length > 1 && stops.length <= 13;
 
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2">
-        <label htmlFor={`m-${def.slug}`} className="text-sm font-medium">
+        <label htmlFor={`m-${def.slug}`} className="truncate text-sm font-medium">
           {def.label}
         </label>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-baseline gap-2">
+          <LastHint last={last} unit={def.unit} disabled={disabled} onAdopt={onChange} />
           <span
             className="tnum text-sm font-semibold"
             style={{ color: value === null ? "var(--text-faint)" : "var(--text)" }}
@@ -261,23 +271,57 @@ function ScaleField({
           ) : null}
         </div>
       </div>
-      <input
-        id={`m-${def.slug}`}
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={position}
-        disabled={disabled}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="mt-1 h-6 w-full"
-        style={{ accentColor: value === null ? "var(--text-faint)" : "var(--accent)" }}
-        aria-valuetext={value === null ? "not recorded" : String(value)}
-      />
-      <div className="flex items-center justify-between gap-2">
-        {def.help ? <p className="text-[11px] text-text-faint">{def.help}</p> : <span />}
-        <LastHint last={last} unit={def.unit} disabled={disabled} onAdopt={onChange} />
-      </div>
+
+      {tappable ? (
+        <div
+          role="radiogroup"
+          aria-label={def.label}
+          id={`m-${def.slug}`}
+          className="mt-1 flex gap-px overflow-hidden rounded-[var(--radius)] border border-border"
+        >
+          {stops.map((stop) => {
+            const on = value !== null && Math.abs(Number(value) - stop) < 1e-9;
+            return (
+              <button
+                key={stop}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                disabled={disabled}
+                // Tapping the value you are already on clears it, so a
+                // misread stays correctable without hunting for "clear".
+                onClick={() => onChange(on ? null : stop)}
+                className="tnum min-w-0 flex-1 py-1.5 text-[11px] font-semibold tabular-nums disabled:opacity-40"
+                style={{
+                  background: on ? "var(--accent)" : "var(--surface-2)",
+                  color: on ? "var(--accent-text)" : "var(--text-faint)",
+                }}
+              >
+                {stop}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <input
+          id={`m-${def.slug}`}
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value ?? (min + max) / 2}
+          disabled={disabled}
+          onChange={(event) => onChange(Number(event.target.value))}
+          className="mt-1 h-6 w-full"
+          style={{ accentColor: value === null ? "var(--text-faint)" : "var(--accent)" }}
+          aria-valuetext={value === null ? "not recorded" : String(value)}
+        />
+      )}
+
+      {/* The prompt is there while you still need it and gone once answered. */}
+      {def.help && value === null ? (
+        <p className="mt-0.5 text-[10px] leading-snug text-text-faint">{def.help}</p>
+      ) : null}
     </div>
   );
 }
@@ -298,10 +342,12 @@ function NumberField({
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
-        <label htmlFor={`m-${def.slug}`} className="text-sm font-medium">
+        <label htmlFor={`m-${def.slug}`} className="block truncate text-sm font-medium">
           {def.label}
         </label>
-        {def.help ? <p className="text-[11px] leading-snug text-text-faint">{def.help}</p> : null}
+        {def.help && value === null ? (
+          <p className="text-[10px] leading-snug text-text-faint">{def.help}</p>
+        ) : null}
         <LastHint last={last} unit={def.unit} disabled={disabled} onAdopt={onChange} />
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
@@ -318,7 +364,7 @@ function NumberField({
           onChange={(event) =>
             onChange(event.target.value === "" ? null : Number(event.target.value))
           }
-          className="tnum min-h-[44px] w-24 rounded-[var(--radius)] border border-border bg-surface-2 px-2 text-right text-base"
+          className="tnum h-10 w-20 rounded-[var(--radius)] border border-border bg-surface-2 px-2 text-right text-base"
         />
         {def.unit ? <span className="text-[11px] text-text-faint">{def.unit}</span> : null}
       </div>
@@ -347,10 +393,10 @@ function TextField({
         value={value}
         disabled={disabled}
         rows={2}
+        placeholder={def.help ?? undefined}
         onChange={(event) => onChange(event.target.value)}
         className="mt-1 w-full rounded-[var(--radius)] border border-border bg-surface-2 px-3 py-2 text-sm"
       />
-      {def.help ? <p className="text-[11px] leading-snug text-text-faint">{def.help}</p> : null}
     </div>
   );
 }

@@ -71,6 +71,12 @@ const Actions = z.discriminatedUnion("action", [
     notes: z.string().max(2000).nullable().optional(),
   }),
   z.object({
+    action: z.literal("update_hypertrophy_set"),
+    set_id: uuid,
+    load_kg: z.number().min(0).max(1000).nullable(),
+    reps: z.number().int().min(0).max(200).nullable(),
+  }),
+  z.object({
     action: z.literal("delete_hypertrophy_set"),
     set_id: uuid,
   }),
@@ -387,6 +393,34 @@ export async function POST(request: Request) {
           .select()
           .single();
         if (error) throw error;
+        return NextResponse.json({ set: data });
+      }
+
+      case "update_hypertrophy_set": {
+        // Logged rows only. An imported reconstruction corrected in place would
+        // quietly become indistinguishable from something actually measured,
+        // and the provenance split is what the whole analysis rests on.
+        const { data, error } = await db
+          .from("hypertrophy_sets")
+          .update({
+            load_kg: input.load_kg,
+            reps: input.reps,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", input.set_id)
+          .eq("provenance", "logged")
+          .select()
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) {
+          return NextResponse.json(
+            {
+              error:
+                "That set came from the imported history, not from logging here, so it is not editable.",
+            },
+            { status: 409 },
+          );
+        }
         return NextResponse.json({ set: data });
       }
 
