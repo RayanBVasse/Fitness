@@ -423,11 +423,16 @@ export function HypertrophyLogger({
           >
             {busy ? "Saving…" : setsToAdd === 1 ? "Add set" : `Add ${setsToAdd} sets`}
           </button>
-          {exercise.is_unilateral ? (
-            <p className="mt-2 text-[11px] text-text-faint">
-              Unilateral — log each side as its own set if they differ.
-            </p>
-          ) : null}
+          {/* The one gesture this screen does not otherwise advertise. Effort
+              is rated after a set, not before, and adding three sets at once
+              cannot carry one RIR for all three — so the rating lives on the
+              set, and the set has to say so. */}
+          <p className="mt-2 text-[11px] leading-snug text-text-dim">
+            Tap a logged set to fix its load or reps, or to record RIR.
+            {exercise.is_unilateral
+              ? " Unilateral — log each side as its own set if they differ."
+              : ""}
+          </p>
         </div>
       ) : null}
 
