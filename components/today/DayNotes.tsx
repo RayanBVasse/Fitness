@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { SectionTitle, wsColour } from "@/components/ui";
 import {
+  DAY_NOTE_CATEGORIES,
   NOTE_CATEGORIES,
   NOTE_CATEGORY_LABELS,
+  WORKSTREAM_NOTE_CATEGORIES,
   type ContextNote,
   type NoteCategory,
   type Workstream,
@@ -27,6 +29,13 @@ import {
  * Notes written here are approved on arrival, so the Coach can read them at
  * once. The imported pack keeps its review gate: that material was written
  * without the Coach in mind, which is the whole reason the gate exists.
+ *
+ * The day's notes offer the same topics every day — food, the gym, sleep —
+ * because the same ground covered daily is what makes days comparable. They
+ * are the four check-in text fields 0015 folded away, returned as prompts
+ * rather than as four boxes demanding to be filled. A topic nobody asked you
+ * about is a topic you did not write about, which is not the same as one
+ * with nothing to say.
  */
 
 type Props = {
@@ -52,6 +61,7 @@ export function DayNotes({ date, sessionId, workstream, notes, canWrite }: Props
     workstream ? n.workstream === workstream : n.workstream === null,
   );
   const hue = workstream ? wsColour(workstream) : "var(--accent)";
+  const offered = workstream ? WORKSTREAM_NOTE_CATEGORIES : DAY_NOTE_CATEGORIES;
 
   function reset() {
     setOpen(false);
@@ -59,6 +69,15 @@ export function DayNotes({ date, sessionId, workstream, notes, canWrite }: Props
     setContent("");
     setCategory("observation");
     setImportant(false);
+  }
+
+  /** Open the composer on one topic. */
+  function start(next: NoteCategory) {
+    setEditingId(null);
+    setContent("");
+    setImportant(false);
+    setCategory(next);
+    setOpen(true);
   }
 
   function run(task: () => Promise<void>) {
@@ -189,7 +208,7 @@ export function DayNotes({ date, sessionId, workstream, notes, canWrite }: Props
           />
 
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {NOTE_CATEGORIES.map((value) => {
+            {offered.map((value) => {
               const on = value === category;
               return (
                 <button
@@ -252,7 +271,7 @@ export function DayNotes({ date, sessionId, workstream, notes, canWrite }: Props
             replaced by their role before anything reaches the Coach.
           </p>
         </div>
-      ) : (
+      ) : workstream ? (
         <button
           type="button"
           disabled={!canWrite || busy}
@@ -260,8 +279,44 @@ export function DayNotes({ date, sessionId, workstream, notes, canWrite }: Props
           className="min-h-[44px] w-full rounded-[var(--radius)] border border-dashed px-3 text-sm font-semibold disabled:opacity-40"
           style={{ borderColor: `color-mix(in oklab, ${hue} 45%, transparent)`, color: hue }}
         >
-          + Add a note{workstream ? "" : " for the day"}
+          + Add a note
         </button>
+      ) : (
+        /* The same ground every day. A topic already written about is marked
+           and still tappable — second thoughts about food are still about
+           food. Nothing here is required; the point is seeing what is
+           missing, not filling it in. */
+        <div>
+          <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-text-dim">
+            Write about
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {offered.map((value) => {
+              const covered = mine.some((n) => n.category === value);
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  disabled={!canWrite || busy}
+                  onClick={() => start(value)}
+                  className="min-h-[38px] rounded-full border px-3 text-xs font-semibold disabled:opacity-40"
+                  style={{
+                    borderColor: covered
+                      ? `color-mix(in oklab, ${hue} 45%, transparent)`
+                      : "var(--border)",
+                    color: covered ? hue : "var(--text-dim)",
+                    background: covered
+                      ? `color-mix(in oklab, ${hue} 8%, transparent)`
+                      : "transparent",
+                  }}
+                >
+                  {covered ? "✓ " : "+ "}
+                  {NOTE_CATEGORY_LABELS[value]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {error ? (

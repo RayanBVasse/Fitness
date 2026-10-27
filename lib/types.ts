@@ -140,16 +140,51 @@ export const NOTE_CATEGORIES = [
   "coaching_advice",
   "question",
   "experiment",
+  "nutrition",
+  "gym_context",
+  "sleep",
 ] as const;
 export type NoteCategory = (typeof NOTE_CATEGORIES)[number];
 
 export const NOTE_CATEGORY_LABELS: Record<NoteCategory, string> = {
-  observation: "Observation",
+  observation: "Anything else",
   technique: "Technique",
   coaching_advice: "Coaching advice",
   question: "Question",
   experiment: "Experiment",
+  nutrition: "Food",
+  gym_context: "The gym",
+  sleep: "Sleep",
 };
+
+/**
+ * The ground a day is worth covering, in the order it is worth covering it.
+ *
+ * These were four text fields in the check-in before 0015 folded them into
+ * notes. Folding them removed the boxes and the prompting with them — and a
+ * prompt is most of what they were for, since a day you were not asked about
+ * food is a day with nothing written about food, which is not the same as a
+ * day you ate nothing worth mentioning.
+ *
+ * The same list every day is what makes days comparable. Covering all of it
+ * is not the point; knowing what you left out is.
+ */
+export const DAY_NOTE_CATEGORIES: NoteCategory[] = [
+  "observation",
+  "nutrition",
+  "gym_context",
+  "sleep",
+  "question",
+];
+
+/** What a note written inside a workstream is about. */
+export const WORKSTREAM_NOTE_CATEGORIES: NoteCategory[] = [
+  "observation",
+  "technique",
+  "coaching_advice",
+  "question",
+  "experiment",
+];
 
 export interface MuscleGroup {
   id: number;
