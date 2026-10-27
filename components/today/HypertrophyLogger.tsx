@@ -69,10 +69,20 @@ export function HypertrophyLogger({
     // Open on the day's region when the weekday theme names one. It is a
     // starting point, never a restriction: every other region is one tap away
     // and nothing is filtered out of "All".
+    // The emphasis is prose — "legs", but also "legs and calisthenics" — so
+    // a region counts as named if it appears in it, not only if it is the
+    // whole of it. Longest first, so "chest & biceps" is not beaten to the
+    // match by a region whose name happens to be a word inside it.
     const hint = (regionHint ?? "").toLowerCase();
-    const match = muscleRegions.find(
-      (r) => r.slug === hint || r.name.toLowerCase() === hint,
-    );
+    const match = [...muscleRegions]
+      .sort((a, b) => b.name.length - a.name.length)
+      .find(
+        (r) =>
+          r.slug === hint ||
+          r.name.toLowerCase() === hint ||
+          hint.includes(r.name.toLowerCase()) ||
+          hint.includes(r.slug.replace(/_/g, " ")),
+      );
     return match ? match.slug : "recent";
   });
   const [setsToAdd, setSetsToAdd] = useState(1);
@@ -226,6 +236,28 @@ export function HypertrophyLogger({
     : scope === "all"
       ? exercises
       : recent;
+
+  /**
+   * The last day this region was trained, and what was done on it.
+   *
+   * Taken from the most recent date any of the region's exercises was used,
+   * so a skipped Monday falls through to the Monday before rather than
+   * showing nothing. It is a reading of what is recorded, not a plan: these
+   * exercises are listed first and nothing is written until you log a set,
+   * because a set carried over from another day is a set that did not happen
+   * on this one.
+   */
+  const regionLastDay = region
+    ? (visible
+        .map((e) => lastFor(e.id)?.setting.last_used_on)
+        .filter((d): d is string => Boolean(d))
+        .sort()
+        .at(-1) ?? null)
+    : null;
+  const fromLastDay = regionLastDay
+    ? visible.filter((e) => lastFor(e.id)?.setting.last_used_on === regionLastDay)
+    : [];
+  const theRest = visible.filter((e) => !fromLastDay.includes(e));
   const volume = sets.reduce<number>((total, s) => total + Number(s.volume_load_kg ?? 0), 0);
 
   // One block per exercise, in the order each was first used. Returning to a
@@ -309,9 +341,17 @@ export function HypertrophyLogger({
 
       {/* Each machine with what it was last done at, so picking one is
           reading rather than remembering. */}
+      {regionLastDay && fromLastDay.length > 0 ? (
+        <p className="text-[11px] text-text-dim">
+          Last {region?.name.toLowerCase()} day:{" "}
+          <span className="tnum">{regionLastDay}</span> · {fromLastDay.length} exercise
+          {fromLastDay.length === 1 ? "" : "s"}, listed first
+        </p>
+      ) : null}
+
       {visible.length > 0 ? (
         <div className="grid grid-cols-2 gap-1.5">
-          {visible.map((e) => {
+          {[...fromLastDay, ...theRest].map((e) => {
             const colour = mgColour(slugOf(e.muscle_group_id));
             const previous = lastFor(e.id);
             const on = e.id === exerciseId;
