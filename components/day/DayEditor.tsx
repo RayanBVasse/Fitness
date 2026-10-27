@@ -144,13 +144,18 @@ export function DayEditor({
         </Link>
       </header>
 
+      {/* Only when nothing was logged. A day with a session on it was a
+          training day, and that is derived from the session rather than
+          chosen here — offering the question with both answers disabled was
+          asking something already answered. */}
+      {!hasSessions ? (
       <Card>
         <SectionTitle>What was this day?</SectionTitle>
         <div className="grid grid-cols-2 gap-2">
           <StatusButton
             label="Rest day"
             active={status === "rest"}
-            disabled={busy || hasSessions}
+            disabled={busy}
             onClick={() => run(async () => {
               await write({ action: "set_day_status", date, status: "rest" });
             })}
@@ -158,23 +163,16 @@ export function DayEditor({
           <StatusButton
             label="Not recorded"
             active={status === "unlogged"}
-            disabled={busy || hasSessions}
+            disabled={busy}
             onClick={() => run(async () => {
               await write({ action: "set_day_status", date, status: "unlogged" });
             })}
           />
         </div>
-        {hasSessions ? (
-          <p className="mt-2 text-[11px] leading-snug text-text-faint">
-            This day has {sessions.length === 1 ? "a session" : `${sessions.length} sessions`} on
-            it, so it counts as trained. Delete the session below to change that.
-          </p>
-        ) : (
-          <p className="mt-2 text-[11px] leading-snug text-text-faint">
-            A rest day is a fact about the day. Leaving it unrecorded says nothing either way,
-            which is different.
-          </p>
-        )}
+        <p className="mt-2 text-[11px] leading-snug text-text-dim">
+          A rest day is a fact about the day. Leaving it unrecorded says nothing either way,
+          which is different.
+        </p>
 
         {status === "rest" && restDef ? (
           <div className="mt-4">
@@ -215,94 +213,82 @@ export function DayEditor({
           </div>
         ) : null}
       </Card>
-
-      {hasSessions ? (
-        <Card>
-          <SectionTitle aside={`${sessions.length} visit${sessions.length === 1 ? "" : "s"}`}>
-            Sessions
-          </SectionTitle>
-          <ul className="divide-y divide-border">
-            {sessions.map((session, index) => {
-              const logged = loggedCounts[session.id] ?? 0;
-              return (
-                <li key={session.id} className="flex items-center justify-between gap-3 py-2.5">
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold">
-                      Visit {index + 1}
-                      {session.started_at ? (
-                        <span className="ml-1 font-normal text-text-faint">
-                          {londonTime(session.started_at)}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="tnum text-[11px] text-text-faint">
-                      {logged > 0 ? `${logged} record${logged === 1 ? "" : "s"} logged` : "nothing logged"}
-                      {session.provenance !== "logged" ? " · reconstructed" : ""}
-                    </div>
-                  </div>
-                  {confirming?.id === session.id ? (
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => run(async () => {
-                          await write({
-                            action: "delete_session",
-                            session_id: session.id,
-                            discard_records: true,
-                          });
-                          setConfirming(null);
-                        })}
-                        className="min-h-[36px] rounded-[var(--radius)] px-3 text-xs font-bold"
-                        style={{ background: "var(--missed)", color: "var(--surface)" }}
-                      >
-                        Discard {confirming.logged}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirming(null)}
-                        className="min-h-[36px] rounded-[var(--radius)] border border-border px-2 text-xs font-semibold text-text-dim"
-                      >
-                        Keep
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        logged > 0
-                          ? setConfirming({ id: session.id, logged })
-                          : run(async () => {
-                              await write({ action: "delete_session", session_id: session.id });
-                            })
-                      }
-                      className="min-h-[36px] shrink-0 rounded-[var(--radius)] border border-border px-3 text-xs font-semibold disabled:opacity-30"
-                      style={{ color: "var(--missed)" }}
-                    >
-                      Delete
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-          <p className="mt-2 text-[11px] leading-snug text-text-faint">
-            Deleting a session with records asks first and names the count. Changing your mind
-            about an empty session is routine; discarding logged training should be deliberate,
-            but it should not be a dead end.
-          </p>
-        </Card>
       ) : null}
 
       {/* Each session in full, and editable, exactly as Today renders it. */}
       {sessions.map((session, index) => (
         <div key={session.id} className="space-y-4">
-          {sessions.length > 1 ? (
-            <div className="px-1 text-[11px] font-bold uppercase tracking-wide text-text-dim">
-              Visit {index + 1}
+          {/* The session's own line. Editing is the whole screen below it, so
+              removal is a quiet word rather than a red button competing with
+              the thing you actually came to do. */}
+          <div className="flex items-baseline justify-between gap-3 px-1">
+            <div className="min-w-0 text-[11px] text-text-dim">
+              <span className="font-bold uppercase tracking-wide">
+                Visit {index + 1}
+              </span>
+              {session.started_at ? (
+                <span className="tnum ml-1.5">{londonTime(session.started_at)}</span>
+              ) : null}
+              <span className="tnum ml-1.5">
+                {(loggedCounts[session.id] ?? 0) > 0
+                  ? `· ${loggedCounts[session.id]} record${
+                      loggedCounts[session.id] === 1 ? "" : "s"
+                    }`
+                  : "· nothing logged"}
+              </span>
+              {session.provenance !== "logged" ? (
+                <span className="ml-1.5">· reconstructed</span>
+              ) : null}
             </div>
-          ) : null}
+            {confirming?.id === session.id ? (
+              <span className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    run(async () => {
+                      await write({
+                        action: "delete_session",
+                        session_id: session.id,
+                        discard_records: true,
+                      });
+                      setConfirming(null);
+                    })
+                  }
+                  className="min-h-[32px] rounded-[var(--radius)] px-2.5 text-[11px] font-bold"
+                  style={{ background: "var(--missed)", color: "var(--surface)" }}
+                >
+                  Discard {confirming.logged}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirming(null)}
+                  className="min-h-[32px] rounded-[var(--radius)] border border-border px-2 text-[11px] font-semibold text-text-dim"
+                >
+                  Keep
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  const logged = loggedCounts[session.id] ?? 0;
+                  // Discarding logged training is deliberate and names the
+                  // count; changing your mind about an empty session is not.
+                  if (logged > 0) setConfirming({ id: session.id, logged });
+                  else
+                    run(async () => {
+                      await write({ action: "delete_session", session_id: session.id });
+                    });
+                }}
+                className="shrink-0 text-[11px] underline underline-offset-2 disabled:no-underline"
+                style={{ color: "var(--text-dim)" }}
+              >
+                Remove visit
+              </button>
+            )}
+          </div>
           <SessionWorkArea
             date={date}
             sessionId={session.id}
