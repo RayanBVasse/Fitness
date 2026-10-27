@@ -91,7 +91,12 @@ export interface SnatchTag {
 /** settings.weekday_themes, keyed by ISO weekday as a string ("1" = Monday). */
 export interface WeekdayTheme {
   name: string;
+  /** The workstream the day is judged on, where it has one. */
   focus: Workstream | null;
+  /** The muscle region the hypertrophy picker opens on. A day has two
+   *  intentions — Tuesday is snatch technique and back and triceps — and one
+   *  `focus` cannot hold both. */
+  region?: string | null;
   emphasis: string | null;
   note: string | null;
 }

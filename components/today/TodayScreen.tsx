@@ -113,6 +113,9 @@ export function TodayScreen({
   // You usually go back to the same gym, so that is the default rather than
   // a blank. Changing it is one tap.
   const theme = weekdayThemes[String(isoWeekday(date))] ?? null;
+  // The region the day states. Falls back to reading it out of the emphasis,
+  // for themes written before `region` had a field of its own.
+  const regionHint = theme?.region ?? theme?.emphasis ?? null;
 
   const [gymId, setGymId] = useState<number | null>(
     () => gyms.find((g) => g.name === lastSession?.gym)?.id ?? null,
@@ -383,7 +386,7 @@ export function TodayScreen({
             exercises={exercises}
             muscleGroups={muscleGroups}
             muscleRegions={muscleRegions}
-            regionHint={theme?.emphasis ?? null}
+            regionHint={regionHint}
             skills={skills}
             skillVariations={skillVariations}
             assistanceTypes={assistanceTypes}

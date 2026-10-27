@@ -439,7 +439,7 @@ async function weeklyPlan(args: { days?: number }): Promise<ToolResult> {
 
   const themes = (themesRow.data?.value ?? {}) as Record<
     string,
-    { name: string; focus: string | null; emphasis: string | null }
+    { name: string; focus: string | null; emphasis: string | null; region?: string | null }
   >;
 
   const byWeekday = new Map<number, { dates: string[]; withFocus: number }>();
@@ -458,6 +458,10 @@ async function weeklyPlan(args: { days?: number }): Promise<ToolResult> {
       iso_weekday: Number(dow),
       theme: theme.name,
       intended_focus: theme.focus,
+      // The hypertrophy half of the day. A weekday has two intentions and
+      // only the workstream one is counted below; this is stated, not
+      // measured, and must not be reported as adherence.
+      intended_region: theme.region ?? null,
       emphasis: theme.emphasis,
       sessions_on_that_weekday: actual.dates.length,
       sessions_matching_focus: theme.focus ? actual.withFocus : null,

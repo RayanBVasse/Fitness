@@ -85,9 +85,16 @@ export default async function SettingsPage() {
           <p className="text-xs leading-snug text-text-dim">{themes.notes}</p>
           <ul className="mt-3 space-y-1.5">
             {WEEKDAYS.map((label, index) => {
-              const theme = (themes.value as Record<string, { name?: string; emphasis?: string }>)[
-                String(index + 1)
-              ];
+              const theme = (
+                themes.value as Record<
+                  string,
+                  { name?: string; emphasis?: string; region?: string | null }
+                >
+              )[String(index + 1)];
+              const region = theme?.region
+                ? (reference.muscleRegions.find((r) => r.slug === theme.region)?.name ??
+                  theme.region)
+                : null;
               return (
                 <li key={label} className="flex items-baseline gap-2 text-sm">
                   <span className="w-10 shrink-0 text-[11px] uppercase tracking-wide text-text-faint">
@@ -98,6 +105,9 @@ export default async function SettingsPage() {
                       <span className="font-semibold">{theme.name}</span>
                       {theme.emphasis ? (
                         <span className="text-[11px] text-text-dim">{theme.emphasis}</span>
+                      ) : null}
+                      {region ? (
+                        <span className="text-[11px] text-text-dim">· {region}</span>
                       ) : null}
                     </>
                   ) : (
