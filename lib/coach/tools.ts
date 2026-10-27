@@ -346,22 +346,35 @@ async function exerciseProgress(args: { exercise: string; days?: number }): Prom
     };
   }
 
-  const { data, error } = await db
-    .from("hypertrophy_sets")
-    .select("load_kg, reps, sets_count, is_drop, session_id, sessions(session_date, gym_id)")
-    .eq("exercise_id", exercise.data.id)
-    .eq("is_drop", false);
+  const [{ data, error }, gymRows] = await Promise.all([
+    db
+      .from("hypertrophy_sets")
+      .select(
+        "load_kg, reps, sets_count, is_drop, rir, machine_label, session_id, sessions(session_date, gym_id)",
+      )
+      .eq("exercise_id", exercise.data.id)
+      .eq("is_drop", false),
+    db.from("gyms").select("id, name"),
+  ]);
   if (error) throw new Error(error.message);
+  const gymName = new Map((gymRows.data ?? []).map((g) => [g.id, g.name as string]));
 
   const rows = (data ?? [])
     .map((r) => {
       const session = r.sessions as unknown as { session_date: string; gym_id: number | null };
       return {
         date: session?.session_date,
-        gym_id: session?.gym_id ?? null,
+        // The name, not the id. A bare integer is not something an answer can
+        // be written from.
+        gym: session?.gym_id == null ? null : (gymName.get(session.gym_id) ?? null),
+        // Which station, where it was recorded. Two triceps extensions in one
+        // gym can be a cable and a plate machine, and the loads on them have
+        // nothing to say to each other.
+        machine: r.machine_label ?? null,
         load_kg: r.load_kg === null ? null : Number(r.load_kg),
         reps: r.reps,
         sets: r.sets_count,
+        rir: r.rir ?? null,
       };
     })
     .filter((r) => r.date && r.date >= window.from && r.date <= window.to)
@@ -375,7 +388,10 @@ async function exerciseProgress(args: { exercise: string; days?: number }): Prom
     note:
       rows.length < 2
         ? `${rows.length} sets of ${exercise.data.name} in this window.`
-        : "Loads are grouped by gym: the same exercise on a different machine is not comparable.",
+        : "Compare loads only within the same gym AND the same machine. Two sets " +
+          "of the same exercise in one gym can be on different stations, and a " +
+          "null machine means the station was not recorded — not that it was the " +
+          "same one. RIR is the athlete's estimate, not a measurement.",
     data: { exercise: exercise.data.name, sets: rows },
   };
 }
