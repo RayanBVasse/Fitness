@@ -523,6 +523,276 @@ async function weeklyPlan(args: { days?: number }): Promise<ToolResult> {
 }
 
 // ---------------------------------------------------------------------------
+// snatch_detail — every lift, with what it was taken on
+// ---------------------------------------------------------------------------
+async function snatchDetail(args: { days?: number; load_kg?: number }): Promise<ToolResult> {
+  const window = windowFrom(args.days ?? 365);
+  const db = readClient();
+
+  let query = db
+    .from("v_snatch_blocks")
+    .select(
+      "id, session_date, gym_name, variation, counts_as_full_lift, weight_kg, attempts, full_stand_successes, received_not_stood, dropped, quality_10, straps, failure_mode, is_warmup, is_cooldown, notes, provenance, record_precision",
+    )
+    .gte("session_date", window.from)
+    .lte("session_date", window.to);
+  if (args.load_kg !== undefined) query = query.eq("weight_kg", args.load_kg);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  const blocks = data ?? [];
+
+  // The lifts themselves, where they were recorded one at a time. Imported
+  // history has none and keeps its block totals instead.
+  const attemptRows = blocks.length
+    ? await db
+        .from("snatch_attempts")
+        .select("block_id, ordinal, outcome, quality_10, failure_mode_id, notes")
+        .in(
+          "block_id",
+          blocks.map((b) => b.id as string),
+        )
+        .order("ordinal")
+    : { data: [], error: null };
+  if (attemptRows.error) throw new Error(attemptRows.error.message);
+
+  const byBlock = new Map<string, typeof attemptRows.data>();
+  for (const a of attemptRows.data ?? []) {
+    const list = byBlock.get(a.block_id as string) ?? [];
+    list.push(a);
+    byBlock.set(a.block_id as string, list);
+  }
+
+  const rows = blocks
+    .map((b) => {
+      const lifts = byBlock.get(b.id as string) ?? [];
+      return {
+        date: b.session_date,
+        gym: b.gym_name ?? null,
+        load_kg: b.weight_kg === null ? null : Number(b.weight_kg),
+        variation: b.variation,
+        counts_as_full_lift: b.counts_as_full_lift,
+        straps: b.straps,
+        is_warmup: b.is_warmup,
+        is_cooldown: b.is_cooldown,
+        block_quality_10: b.quality_10 ?? null,
+        block_failure_mode: b.failure_mode ?? null,
+        notes: b.notes ?? null,
+        provenance: b.provenance,
+        basis: lifts.length > 0 ? "attempt" : b.record_precision,
+        attempts: lifts.length > 0 ? lifts.length : (b.attempts ?? null),
+        stood:
+          lifts.length > 0
+            ? lifts.filter((a) => a.outcome === "stood").length
+            : (b.full_stand_successes ?? null),
+        received_not_stood:
+          lifts.length > 0
+            ? lifts.filter((a) => a.outcome === "received_not_stood").length
+            : (b.received_not_stood ?? null),
+        lifts: lifts.map((a) => ({
+          ordinal: a.ordinal,
+          outcome: a.outcome,
+          quality_10: a.quality_10 ?? null,
+          notes: a.notes ?? null,
+        })),
+      };
+    })
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  const counted = rows.filter((r) => r.counts_as_full_lift && !r.is_warmup);
+  return {
+    tool: "snatch_detail",
+    window,
+    n: rows.length,
+    insufficient: rows.length === 0,
+    note:
+      rows.length === 0
+        ? "No snatch blocks in this window."
+        : "Every block, warm-ups and pulls included, so filter before counting. " +
+          "`counts_as_full_lift` false is not a snatch and never belongs in a " +
+          "success rate; `is_warmup` is working-set tonnage only if you say it " +
+          "is. `basis` 'attempt' means the lifts are listed individually; " +
+          "anything else is a block total reconstructed from conversation, with " +
+          "`lifts` empty. Quality is a judgement of how the lift looked and is " +
+          "independent of whether it was stood.",
+    data: {
+      blocks: rows,
+      working_full_lift_blocks: counted.length,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// skill_progress — calisthenics, per variation, never pooled
+// ---------------------------------------------------------------------------
+async function skillProgress(args: { skill?: string; days?: number }): Promise<ToolResult> {
+  const window = windowFrom(args.days ?? 365);
+  const db = readClient();
+
+  const [entryRows, variationRows, assistanceRows] = await Promise.all([
+    db
+      .from("calisthenics_entries")
+      .select(
+        "id, skill_variation_id, attempts, successful_attempts, best_hold_seconds, total_hold_seconds, controlled_ascent, controlled_descent, assistance_id, quality_10, notes, provenance, record_precision, sessions(session_date)",
+      ),
+    db
+      .from("skill_variations")
+      .select("id, slug, name, skill_id, difficulty, min_hold_seconds, requires_no_kick, requires_controlled_ascent, requires_controlled_descent, criteria_notes, skills(slug, name)"),
+    db.from("assistance_types").select("id, name"),
+  ]);
+  if (entryRows.error) throw new Error(entryRows.error.message);
+  if (variationRows.error) throw new Error(variationRows.error.message);
+
+  const variation = new Map(
+    (variationRows.data ?? []).map((v) => [
+      v.id as number,
+      v as unknown as {
+        id: number;
+        slug: string;
+        name: string;
+        difficulty: number | null;
+        min_hold_seconds: number | null;
+        requires_no_kick: boolean;
+        requires_controlled_ascent: boolean;
+        requires_controlled_descent: boolean;
+        criteria_notes: string | null;
+        skills: { slug: string; name: string } | null;
+      },
+    ]),
+  );
+  const assistance = new Map(
+    (assistanceRows.data ?? []).map((a) => [a.id as number, a.name as string]),
+  );
+
+  const entries = (entryRows.data ?? [])
+    .map((e) => {
+      const session = e.sessions as unknown as { session_date: string } | null;
+      return { ...e, date: session?.session_date ?? null };
+    })
+    .filter((e) => e.date && e.date >= window.from && e.date <= window.to)
+    .filter((e) => {
+      if (!args.skill) return true;
+      const v = variation.get(e.skill_variation_id as number);
+      const needle = args.skill.toLowerCase();
+      return (
+        v?.name.toLowerCase().includes(needle) ||
+        v?.slug.includes(needle) ||
+        v?.skills?.name.toLowerCase().includes(needle) ||
+        v?.skills?.slug.includes(needle)
+      );
+    });
+
+  const attemptRows = entries.length
+    ? await db
+        .from("calisthenics_attempts")
+        .select(
+          "entry_id, ordinal, succeeded, hold_seconds, controlled_ascent, controlled_descent, negative_seconds, notes",
+        )
+        .in(
+          "entry_id",
+          entries.map((e) => e.id as string),
+        )
+        .order("ordinal")
+    : { data: [], error: null };
+  if (attemptRows.error) throw new Error(attemptRows.error.message);
+
+  const byEntry = new Map<string, typeof attemptRows.data>();
+  for (const a of attemptRows.data ?? []) {
+    const list = byEntry.get(a.entry_id as string) ?? [];
+    list.push(a);
+    byEntry.set(a.entry_id as string, list);
+  }
+
+  const rows = entries
+    .map((e) => {
+      const v = variation.get(e.skill_variation_id as number);
+      const lifts = byEntry.get(e.id as string) ?? [];
+      const holds = lifts
+        .filter((a) => a.succeeded && a.hold_seconds != null)
+        .map((a) => Number(a.hold_seconds));
+      return {
+        date: e.date,
+        skill: v?.skills?.name ?? null,
+        variation: v?.name ?? null,
+        // Ranked within its own skill only. A level 3 handstand and a level 3
+        // back lever have nothing in common.
+        difficulty: v?.difficulty ?? null,
+        success_criteria: {
+          min_hold_seconds: v?.min_hold_seconds ?? null,
+          requires_no_kick: v?.requires_no_kick ?? null,
+          requires_controlled_ascent: v?.requires_controlled_ascent ?? null,
+          requires_controlled_descent: v?.requires_controlled_descent ?? null,
+          notes: v?.criteria_notes ?? null,
+        },
+        assistance: e.assistance_id == null ? null : (assistance.get(e.assistance_id) ?? null),
+        quality_10: e.quality_10 ?? null,
+        notes: e.notes ?? null,
+        provenance: e.provenance,
+        basis: lifts.length > 0 ? "attempt" : e.record_precision,
+        attempts: lifts.length > 0 ? lifts.length : (e.attempts ?? null),
+        successes:
+          lifts.length > 0
+            ? lifts.filter((a) => a.succeeded).length
+            : (e.successful_attempts ?? null),
+        best_hold_seconds:
+          holds.length > 0
+            ? Math.max(...holds)
+            : e.best_hold_seconds === null
+              ? null
+              : Number(e.best_hold_seconds),
+        total_hold_seconds:
+          holds.length > 0
+            ? round1(holds.reduce((t, h) => t + h, 0))
+            : e.total_hold_seconds === null
+              ? null
+              : Number(e.total_hold_seconds),
+        // Counts exist only where attempts were recorded one at a time. The
+        // old booleans said "at least one", which is not a number.
+        controlled_ascents: lifts.length > 0 ? lifts.filter((a) => a.controlled_ascent).length : null,
+        controlled_descents:
+          lifts.length > 0 ? lifts.filter((a) => a.controlled_descent).length : null,
+        controlled_ascent_reported: lifts.length > 0 ? null : (e.controlled_ascent ?? null),
+        controlled_descent_reported: lifts.length > 0 ? null : (e.controlled_descent ?? null),
+        negative_seconds: lifts.length > 0
+          ? round1(lifts.reduce((t, a) => t + Number(a.negative_seconds ?? 0), 0)) || null
+          : null,
+        attempts_detail: lifts.map((a) => ({
+          ordinal: a.ordinal,
+          succeeded: a.succeeded,
+          hold_seconds: a.hold_seconds === null ? null : Number(a.hold_seconds),
+          controlled_ascent: a.controlled_ascent,
+          controlled_descent: a.controlled_descent,
+          negative_seconds: a.negative_seconds === null ? null : Number(a.negative_seconds),
+          notes: a.notes ?? null,
+        })),
+      };
+    })
+    .sort((a, b) => ((a.date ?? "") < (b.date ?? "") ? -1 : 1));
+
+  return {
+    tool: "skill_progress",
+    window,
+    n: rows.length,
+    insufficient: rows.length === 0,
+    note:
+      rows.length === 0
+        ? args.skill
+          ? `No calisthenics entries match "${args.skill}" in this window.`
+          : "No calisthenics entries in this window."
+        : "One row per entry, never pooled across variations: a banded handstand " +
+          "push-up and a freestanding one are different capabilities that share " +
+          "a name, and a combined success rate over them means nothing. " +
+          "`difficulty` ranks within one skill only. `success_criteria` is what " +
+          "the variation defines a success as; whether an attempt met it was the " +
+          "athlete's judgement, not a check. `basis` 'attempt' means the " +
+          "attempts are listed; anything else is a block total with " +
+          "`attempts_detail` empty and the controlled counts unavailable — the " +
+          "reported booleans there mean 'at least one', not a count.",
+    data: { entries: rows },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
 type Executor = (args: Record<string, never>) => Promise<ToolResult>;
@@ -627,6 +897,43 @@ export const TOOLS: Record<string, { schema: AnthropicTool; run: Executor }> = {
       },
     },
     run: weeklyPlan as unknown as Executor,
+  },
+  snatch_detail: {
+    schema: {
+      name: "snatch_detail",
+      description:
+        "Every snatch block and, where recorded, every individual lift: load, variation, straps, warm-up, technical quality, failure mode and notes. Use when the question is about what a session actually involved rather than a rate.",
+      input_schema: {
+        type: "object",
+        properties: {
+          days: { type: "number", description: "Look back this many days. Default 365." },
+          load_kg: { type: "number", description: "Restrict to one load, e.g. 50." },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+    },
+    run: snatchDetail as unknown as Executor,
+  },
+  skill_progress: {
+    schema: {
+      name: "skill_progress",
+      description:
+        "Calisthenics per variation: attempts, successes, holds, controlled reps, negatives, assistance, quality and the variation's own success criteria. Never pools variations. Use for any question about a skill.",
+      input_schema: {
+        type: "object",
+        properties: {
+          skill: {
+            type: "string",
+            description: "Skill or variation name, e.g. 'handstand' or 'back lever'. Omit for all.",
+          },
+          days: { type: "number", description: "Look back this many days. Default 365." },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+    },
+    run: skillProgress as unknown as Executor,
   },
   approved_notes: {
     schema: {
