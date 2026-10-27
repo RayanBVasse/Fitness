@@ -7,7 +7,31 @@ import { write } from "@/lib/write";
 import { Card, SectionTitle } from "@/components/ui";
 import { DailyCheckIn } from "@/components/today/DailyCheckIn";
 import { londonTime, longDate, weekdayName } from "@/lib/time";
-import { WORKSTREAM_LABELS, type DailyMetric, type DailyMetricDef, type DayRecord, type Session } from "@/lib/types";
+import { SessionWorkArea } from "@/components/session/SessionWorkArea";
+import {
+  WORKSTREAM_LABELS,
+  type AssistanceType,
+  type CalisthenicsAttempt,
+  type CalisthenicsEntry,
+  type ContextNote,
+  type DailyMetric,
+  type DailyMetricDef,
+  type DayRecord,
+  type Exercise,
+  type FailureMode,
+  type HypertrophySet,
+  type MuscleGroup,
+  type MuscleRegion,
+  type Session,
+  type SessionBlock,
+  type Skill,
+  type SkillVariation,
+  type SnatchAttempt,
+  type SnatchBlock,
+  type SnatchVariation,
+  type WarmupLadder,
+  type WeightPreset,
+} from "@/lib/types";
 
 /**
  * Any day, editable after the fact.
@@ -19,6 +43,12 @@ import { WORKSTREAM_LABELS, type DailyMetric, type DailyMetricDef, type DayRecor
  *
  * Status, reason, journal and sessions all live on this one screen, so a past
  * day can be completed without inventing a gym session to hang it from.
+ *
+ * A session on a past day opens the same work area as today's. A mis-tapped
+ * rep is wrong whether you catch it at 07:00 or the next morning, and the
+ * write path has never cared which date a session belongs to. The one thing
+ * a past day does not offer is last-time prefill: "last time" relative to a
+ * day in the past would fill the form with numbers lifted after it.
  */
 
 type Props = {
@@ -29,6 +59,23 @@ type Props = {
   metricDefs: DailyMetricDef[];
   metrics: DailyMetric[];
   lastMetricValues: (DailyMetric & { metric_date: string })[];
+  blocks: SessionBlock[];
+  snatchBlocks: SnatchBlock[];
+  snatchAttempts: SnatchAttempt[];
+  hypertrophySets: HypertrophySet[];
+  calisthenicsEntries: CalisthenicsEntry[];
+  calisthenicsAttempts: CalisthenicsAttempt[];
+  notes: ContextNote[];
+  presets: WeightPreset[];
+  variations: SnatchVariation[];
+  failureModes: FailureMode[];
+  ladder: WarmupLadder | null;
+  exercises: Exercise[];
+  muscleGroups: MuscleGroup[];
+  muscleRegions: MuscleRegion[];
+  skills: Skill[];
+  skillVariations: SkillVariation[];
+  assistanceTypes: AssistanceType[];
   isToday: boolean;
 };
 
@@ -37,6 +84,23 @@ export function DayEditor({
   day,
   sessions,
   loggedCounts,
+  blocks,
+  snatchBlocks,
+  snatchAttempts,
+  hypertrophySets,
+  calisthenicsEntries,
+  calisthenicsAttempts,
+  notes,
+  presets,
+  variations,
+  failureModes,
+  ladder,
+  exercises,
+  muscleGroups,
+  muscleRegions,
+  skills,
+  skillVariations,
+  assistanceTypes,
   metricDefs,
   metrics,
   lastMetricValues,
@@ -230,6 +294,56 @@ export function DayEditor({
           </p>
         </Card>
       ) : null}
+
+      {/* Each session in full, and editable, exactly as Today renders it. */}
+      {sessions.map((session, index) => (
+        <div key={session.id} className="space-y-4">
+          {sessions.length > 1 ? (
+            <div className="px-1 text-[11px] font-bold uppercase tracking-wide text-text-dim">
+              Visit {index + 1}
+            </div>
+          ) : null}
+          <SessionWorkArea
+            date={date}
+            sessionId={session.id}
+            gymId={session.gym_id}
+            blocks={blocks.filter((b) => b.session_id === session.id)}
+            snatchBlocks={snatchBlocks.filter((b) => b.session_id === session.id)}
+            snatchAttempts={snatchAttempts.filter((a) =>
+              snatchBlocks.some((b) => b.id === a.block_id && b.session_id === session.id),
+            )}
+            hypertrophySets={hypertrophySets.filter((h) => h.session_id === session.id)}
+            calisthenicsEntries={calisthenicsEntries.filter((c) => c.session_id === session.id)}
+            calisthenicsAttempts={calisthenicsAttempts.filter((a) =>
+              calisthenicsEntries.some(
+                (e) => e.id === a.entry_id && e.session_id === session.id,
+              ),
+            )}
+            notes={notes}
+            presets={presets}
+            variations={variations}
+            failureModes={failureModes}
+            ladder={ladder}
+            exercises={exercises}
+            muscleGroups={muscleGroups}
+            muscleRegions={muscleRegions}
+            regionHint={null}
+            skills={skills}
+            skillVariations={skillVariations}
+            assistanceTypes={assistanceTypes}
+            // Always empty here. "Last time" is computed from the most
+            // recent session overall, so on a past day it would offer numbers
+            // lifted after it — a prefill that reads as a measurement of a
+            // day it did not happen on. Today's screen keeps the prefills.
+            lastExerciseSettings={[]}
+            lastSkillSettings={[]}
+            recentExerciseIds={[]}
+            recentSkillVariationIds={[]}
+            performanceTitle={isToday ? undefined : "That session"}
+            canWrite
+          />
+        </div>
+      ))}
 
       {metricDefs.length > 0 ? (
         <Card>

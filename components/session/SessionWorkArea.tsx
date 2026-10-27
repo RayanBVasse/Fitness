@@ -1,0 +1,301 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { SnatchLogger } from "@/components/today/SnatchLogger";
+import { HypertrophyLogger } from "@/components/today/HypertrophyLogger";
+import { CalisthenicsLogger } from "@/components/today/CalisthenicsLogger";
+import { DayNotes } from "@/components/today/DayNotes";
+import { DayPerformance } from "@/components/today/DayPerformance";
+import { Card, wsColour } from "@/components/ui";
+import {
+  WORKSTREAM_LABELS,
+  type AssistanceType,
+  type CalisthenicsAttempt,
+  type CalisthenicsEntry,
+  type ContextNote,
+  type Exercise,
+  type FailureMode,
+  type HypertrophySet,
+  type LastExerciseSetting,
+  type LastSkillSetting,
+  type MuscleGroup,
+  type MuscleRegion,
+  type SessionBlock,
+  type Skill,
+  type SkillVariation,
+  type SnatchAttempt,
+  type SnatchBlock,
+  type SnatchVariation,
+  type WarmupLadder,
+  type WeightPreset,
+  type Workstream,
+} from "@/lib/types";
+
+/**
+ * One session's work area: three tabs, three loggers, the notes attached to
+ * each, and the day's totals underneath.
+ *
+ * Shared between Today and any past date. A session is a session — correcting
+ * a mis-tapped rep is the same operation whether you notice it at 07:00 or
+ * the next morning, and the write path has never cared which day a session
+ * belongs to. The only difference a past day makes is that it does not offer
+ * last-time prefills, because "last time" relative to a day in the past would
+ * mean filling a form with numbers lifted after it.
+ */
+
+export const WORKSTREAMS: Workstream[] = ["snatch", "hypertrophy", "calisthenics"];
+const TAB_KEY = "fitness.workstream-tab";
+
+type Props = {
+  date: string;
+  sessionId: string;
+  gymId: number | null;
+  blocks: SessionBlock[];
+  snatchBlocks: SnatchBlock[];
+  snatchAttempts: SnatchAttempt[];
+  hypertrophySets: HypertrophySet[];
+  calisthenicsEntries: CalisthenicsEntry[];
+  calisthenicsAttempts: CalisthenicsAttempt[];
+  notes: ContextNote[];
+  presets: WeightPreset[];
+  variations: SnatchVariation[];
+  failureModes: FailureMode[];
+  ladder: WarmupLadder | null;
+  exercises: Exercise[];
+  muscleGroups: MuscleGroup[];
+  muscleRegions: MuscleRegion[];
+  regionHint: string | null;
+  skills: Skill[];
+  skillVariations: SkillVariation[];
+  assistanceTypes: AssistanceType[];
+  lastExerciseSettings: LastExerciseSetting[];
+  lastSkillSettings: LastSkillSetting[];
+  recentExerciseIds: number[];
+  recentSkillVariationIds: number[];
+  /** Null on a past day: see the note above about prefills. */
+  initialTab?: Workstream | null;
+  /** Omitted on today; a past day says what it was, not what it is. */
+  performanceTitle?: string;
+  canWrite: boolean;
+};
+
+export function SessionWorkArea({
+  date,
+  sessionId,
+  gymId,
+  blocks,
+  snatchBlocks,
+  snatchAttempts,
+  hypertrophySets,
+  calisthenicsEntries,
+  calisthenicsAttempts,
+  notes,
+  presets,
+  variations,
+  failureModes,
+  ladder,
+  exercises,
+  muscleGroups,
+  muscleRegions,
+  regionHint,
+  skills,
+  skillVariations,
+  assistanceTypes,
+  lastExerciseSettings,
+  lastSkillSettings,
+  recentExerciseIds,
+  recentSkillVariationIds,
+  initialTab = null,
+  performanceTitle,
+  canWrite,
+}: Props) {
+  const [tab, setTab] = useState<Workstream>(initialTab ?? "snatch");
+
+  // Which tab you were on, remembered per browser. It is a view preference,
+  // not a fact about training, so it has no business in Postgres.
+  useEffect(() => {
+    const stored = (() => {
+      try {
+        return window.localStorage.getItem(TAB_KEY);
+      } catch {
+        return null;
+      }
+    })();
+    const remembered =
+      stored && (WORKSTREAMS as string[]).includes(stored) ? (stored as Workstream) : null;
+    const next = remembered ?? initialTab ?? null;
+    // Browser storage cannot be read during render without a hydration
+    // mismatch, since the server has no access to it.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (next) setTab(next);
+    // Deliberately once, on mount: after that the tab is yours.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function chooseTab(next: Workstream) {
+    setTab(next);
+    try {
+      window.localStorage.setItem(TAB_KEY, next);
+    } catch {
+      /* nothing to do: the tab simply will not be remembered */
+    }
+  }
+
+  const snatchBlock = blocks.find((b) => b.workstream === "snatch") ?? null;
+  const hypertrophyBlock = blocks.find((b) => b.workstream === "hypertrophy") ?? null;
+  const calisthenicsBlock = blocks.find((b) => b.workstream === "calisthenics") ?? null;
+
+  /** What each tab has to show for itself. Nothing recorded reads as a dash,
+   *  not a zero: zero sets is a measurement, and this is an absence. */
+  function tabTotal(workstream: Workstream): string {
+    if (workstream === "snatch") {
+      const lifts = snatchBlocks.reduce((total, b) => total + Number(b.attempts ?? 0), 0);
+      return lifts > 0 ? `${lifts} attempt${lifts === 1 ? "" : "s"}` : "—";
+    }
+    if (workstream === "hypertrophy") {
+      const n = hypertrophySets.length;
+      return n > 0 ? `${n} set${n === 1 ? "" : "s"}` : "—";
+    }
+    const n = calisthenicsEntries.length;
+    return n > 0 ? `${n} skill${n === 1 ? "" : "s"}` : "—";
+  }
+
+  const hue = wsColour(tab);
+
+  return (
+    <>
+      {/* One work area, three tabs. Selecting a tab records nothing: the
+          block for a workstream is created by its first set, lift or skill
+          entry, server-side. The inactive panels stay mounted and are merely
+          hidden, so a half-typed entry survives a switch. */}
+      <Card
+        style={{
+          borderColor: `color-mix(in oklab, ${hue} 35%, var(--border))`,
+          boxShadow: `inset 0 3px 0 ${hue}`,
+        }}
+      >
+        <div
+          role="tablist"
+          aria-label="Workstream"
+          className="mb-3 flex gap-1 rounded-[var(--radius)] p-1"
+          style={{ background: "var(--surface-2)" }}
+        >
+          {WORKSTREAMS.map((workstream) => {
+            const on = tab === workstream;
+            const tone = wsColour(workstream);
+            return (
+              <button
+                key={workstream}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => chooseTab(workstream)}
+                className="min-h-[44px] flex-1 rounded-[calc(var(--radius)-4px)] px-1 text-xs font-bold"
+                style={{
+                  background: on ? "var(--surface)" : "transparent",
+                  color: on ? tone : "var(--text-dim)",
+                  boxShadow: on ? `inset 0 -2px 0 ${tone}` : undefined,
+                }}
+              >
+                <span className="block truncate">{WORKSTREAM_LABELS[workstream]}</span>
+                <span className="tnum block text-[10px] font-normal text-text-dim">
+                  {tabTotal(workstream)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ display: tab === "snatch" ? undefined : "none" }}>
+          {/* Keyed on the session: the logger seeds its state from these
+              blocks on mount, so switching sessions must remount it rather
+              than leave the previous one's blocks on screen. */}
+          <SnatchLogger
+            key={sessionId}
+            sessionId={sessionId}
+            sessionBlockId={snatchBlock?.id ?? null}
+            presets={presets}
+            variations={variations}
+            ladder={ladder}
+            initialBlocks={snatchBlocks}
+            initialAttempts={snatchAttempts}
+            failureModes={failureModes}
+            canWrite={canWrite}
+          />
+          <div className="mt-3">
+            <DayNotes
+              date={date}
+              sessionId={sessionId}
+              workstream="snatch"
+              notes={notes}
+              canWrite={canWrite}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: tab === "hypertrophy" ? undefined : "none" }}>
+          <HypertrophyLogger
+            key={`h-${sessionId}`}
+            sessionId={sessionId}
+            sessionBlockId={hypertrophyBlock?.id ?? null}
+            gymId={gymId}
+            exercises={exercises}
+            muscleGroups={muscleGroups}
+            muscleRegions={muscleRegions}
+            regionHint={regionHint}
+            recentExerciseIds={recentExerciseIds}
+            lastSettings={lastExerciseSettings}
+            initialSets={hypertrophySets}
+            canWrite={canWrite}
+          />
+          <div className="mt-3">
+            <DayNotes
+              date={date}
+              sessionId={sessionId}
+              workstream="hypertrophy"
+              notes={notes}
+              canWrite={canWrite}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: tab === "calisthenics" ? undefined : "none" }}>
+          <CalisthenicsLogger
+            key={`c-${sessionId}`}
+            sessionId={sessionId}
+            sessionBlockId={calisthenicsBlock?.id ?? null}
+            skills={skills}
+            variations={skillVariations}
+            assistanceTypes={assistanceTypes}
+            recentVariationIds={recentSkillVariationIds}
+            lastSettings={lastSkillSettings}
+            initialEntries={calisthenicsEntries}
+            initialAttempts={calisthenicsAttempts}
+            canWrite={canWrite}
+          />
+          <div className="mt-3">
+            <DayNotes
+              date={date}
+              sessionId={sessionId}
+              workstream="calisthenics"
+              notes={notes}
+              canWrite={canWrite}
+            />
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <DayPerformance
+          snatchBlocks={snatchBlocks}
+          hypertrophySets={hypertrophySets}
+          calisthenicsEntries={calisthenicsEntries}
+          variations={variations}
+          exercises={exercises}
+          muscleGroups={muscleGroups}
+          title={performanceTitle}
+        />
+      </Card>
+    </>
+  );
+}

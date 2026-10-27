@@ -27,6 +27,8 @@ type Props = {
   variations: SnatchVariation[];
   exercises: Exercise[];
   muscleGroups: MuscleGroup[];
+  /** "Today so far" on today; a past day is not still happening. */
+  title?: string;
 };
 
 const num = (value: unknown): number => (value == null ? 0 : Number(value));
@@ -39,6 +41,7 @@ export function DayPerformance({
   variations,
   exercises,
   muscleGroups,
+  title = "Today so far",
 }: Props) {
   if (
     snatchBlocks.length === 0 &&
@@ -87,7 +90,7 @@ export function DayPerformance({
 
   return (
     <div>
-      <SectionTitle>Today so far</SectionTitle>
+      <SectionTitle>{title}</SectionTitle>
 
       <div className="space-y-3">
         {snatchBlocks.length > 0 ? (

@@ -517,6 +517,15 @@ export interface DayDetail {
   metricDefs: DailyMetricDef[];
   metrics: DailyMetric[];
   lastMetricValues: (DailyMetric & { metric_date: string })[];
+  /** The session's own records, so a past day can be read and corrected
+   *  rather than merely counted. */
+  blocks: SessionBlock[];
+  snatchBlocks: SnatchBlock[];
+  snatchAttempts: SnatchAttempt[];
+  hypertrophySets: HypertrophySet[];
+  calisthenicsEntries: CalisthenicsEntry[];
+  calisthenicsAttempts: CalisthenicsAttempt[];
+  notes: ContextNote[];
   error: string | null;
 }
 
@@ -552,22 +561,67 @@ export async function getDayDetail(date: string): Promise<DayDetail> {
   const ids = sessions.map((s) => s.id);
   const loggedCounts: Record<string, number> = Object.fromEntries(ids.map((id) => [id, 0]));
 
+  let blocks: SessionBlock[] = [];
+  let snatchBlocks: SnatchBlock[] = [];
+  let snatchAttempts: SnatchAttempt[] = [];
+  let hypertrophySets: HypertrophySet[] = [];
+  let calisthenicsEntries: CalisthenicsEntry[] = [];
+  let calisthenicsAttempts: CalisthenicsAttempt[] = [];
+
   if (ids.length) {
-    const [snatch, hypertrophy, calisthenics] = await Promise.all([
-      safeRead<{ session_id: string }[]>((c) =>
-        c.from("snatch_blocks").select("session_id").in("session_id", ids),
+    const [blockRows, snatch, hypertrophy, calisthenics] = await Promise.all([
+      safeRead<SessionBlock[]>((c) =>
+        c.from("session_blocks").select("*").in("session_id", ids).order("sort_order"),
       ),
-      safeRead<{ session_id: string }[]>((c) =>
-        c.from("hypertrophy_sets").select("session_id").in("session_id", ids),
+      safeRead<SnatchBlock[]>((c) =>
+        c.from("snatch_blocks").select("*").in("session_id", ids).order("logged_at"),
       ),
-      safeRead<{ session_id: string }[]>((c) =>
-        c.from("calisthenics_entries").select("session_id").in("session_id", ids),
+      safeRead<HypertrophySet[]>((c) =>
+        c.from("hypertrophy_sets").select("*").in("session_id", ids).order("created_at"),
+      ),
+      safeRead<CalisthenicsEntry[]>((c) =>
+        c.from("calisthenics_entries").select("*").in("session_id", ids).order("created_at"),
       ),
     ]);
-    for (const row of [...(snatch.data ?? []), ...(hypertrophy.data ?? []), ...(calisthenics.data ?? [])]) {
+    blocks = blockRows.data ?? [];
+    snatchBlocks = snatch.data ?? [];
+    hypertrophySets = hypertrophy.data ?? [];
+    calisthenicsEntries = calisthenics.data ?? [];
+
+    // After the rows they filter by, never before: reading these from above
+    // the fetch is what made the attempts silently vanish on Today.
+    const [snatchAttemptRows, calisthenicsAttemptRows] = await Promise.all([
+      safeRead<SnatchAttempt[]>((c) =>
+        c
+          .from("snatch_attempts")
+          .select<string, SnatchAttempt>("*")
+          .in("block_id", snatchBlocks.map((b) => b.id))
+          .order("ordinal"),
+      ),
+      safeRead<CalisthenicsAttempt[]>((c) =>
+        c
+          .from("calisthenics_attempts")
+          .select<string, CalisthenicsAttempt>("*")
+          .in("entry_id", calisthenicsEntries.map((e) => e.id))
+          .order("ordinal"),
+      ),
+    ]);
+    snatchAttempts = snatchAttemptRows.data ?? [];
+    calisthenicsAttempts = calisthenicsAttemptRows.data ?? [];
+
+    for (const row of [...snatchBlocks, ...hypertrophySets, ...calisthenicsEntries]) {
       loggedCounts[row.session_id] = (loggedCounts[row.session_id] ?? 0) + 1;
     }
   }
+
+  const notesResult = await safeRead<ContextNote[]>((c) =>
+    c
+      .from("context_notes")
+      .select<string, ContextNote>("*")
+      .eq("anchor_date", date)
+      .in("source_type", ["authored_in_app", "daily_check_in"])
+      .order("created_at", { ascending: true }),
+  );
 
   return {
     date,
@@ -577,6 +631,13 @@ export async function getDayDetail(date: string): Promise<DayDetail> {
     metricDefs: defsResult.data ?? [],
     metrics: metricsResult.data ?? [],
     lastMetricValues: dedupeByMetric(priorResult.data ?? []),
+    blocks,
+    snatchBlocks,
+    snatchAttempts,
+    hypertrophySets,
+    calisthenicsEntries,
+    calisthenicsAttempts,
+    notes: notesResult.data ?? [],
     error: sessionResult.error ?? defsResult.error,
   };
 }
