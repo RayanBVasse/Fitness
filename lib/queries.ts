@@ -678,3 +678,239 @@ export async function getLastBlockAtWeight(weightKg: number) {
       .limit(1),
   );
 }
+
+// ---------------------------------------------------------------------------
+// Progress
+// ---------------------------------------------------------------------------
+
+/** One ISO week of one thing. `week` is the Monday. */
+export interface WeekPoint {
+  week: string;
+  value: number;
+}
+
+export interface ProgressData {
+  /** The window actually covered, which may be shorter than asked for. */
+  from: string;
+  to: string;
+  weeks: number | null;
+  /** Stand rate per week at each load, substantiated full lifts only. */
+  snatchByLoad: { load_kg: number; points: { week: string; attempts: number; stood: number }[] }[];
+  /** Bar lifted per week, working and warm-up kept apart. */
+  snatchTonnage: { week: string; working: number; warmup: number }[];
+  /** Sets per week per muscle group. */
+  setsByGroup: { week: string; groups: Record<string, number> }[];
+  /** Volume load per week, in kg. */
+  volumeByWeek: WeekPoint[];
+  /** Per variation over the whole window. Never pooled across variations. */
+  skills: {
+    variation: string;
+    skill: string;
+    difficulty: number | null;
+    attempts: number;
+    successes: number;
+    bestHoldSeconds: number | null;
+    entries: number;
+    basis: "attempt" | "mixed" | "summary";
+  }[];
+  error: string | null;
+}
+
+/**
+ * Everything the Progress screen counts, for one window.
+ *
+ * Aggregated here rather than in views, for the reason getHistory gives: the
+ * shape of these summaries is still moving, and a view would need a migration
+ * every time it does. A season of training is a few thousand rows.
+ *
+ * Weeks are ISO weeks starting Monday, matching fitness.week_start, so a week
+ * here and a week in the database are the same week.
+ */
+export async function getProgress(weeks: number | null): Promise<ProgressData> {
+  const to = londonToday();
+  const from = weeks
+    ? new Date(Date.parse(to) - weeks * 7 * 86400000).toISOString().slice(0, 10)
+    : "1970-01-01";
+
+  const [snatchWeekly, snatchBlocks, sets, exercises, groups, entries, variations, skills] =
+    await Promise.all([
+      safeRead<{ week_start: string; weight_kg: number; attempts: number; stood: number }[]>((c) =>
+        c
+          .from("v_snatch_weekly")
+          .select("week_start, weight_kg, attempts, stood")
+          .gte("week_start", from)
+          .order("week_start"),
+      ),
+      safeRead<{ session_date: string; weight_kg: number; attempts: number; is_warmup: boolean }[]>(
+        (c) =>
+          c
+            .from("v_snatch_blocks")
+            .select("session_date, weight_kg, attempts, is_warmup")
+            .gte("session_date", from)
+            .lte("session_date", to),
+      ),
+      // `sessions` is typed as an array by the client, which cannot know a
+      // to-one embed returns an object; it is cast at the point of use, as
+      // the rest of this file does.
+      safeRead<{ exercise_id: number; volume_load_kg: number | null; sessions: unknown }[]>((c) =>
+        c
+          .from("hypertrophy_sets")
+          .select("exercise_id, volume_load_kg, is_drop, sessions(session_date)")
+          .eq("is_drop", false),
+      ),
+      safeRead<Exercise[]>((c) => c.from("exercises").select("*")),
+      safeRead<MuscleGroup[]>((c) => c.from("muscle_groups").select("*").order("sort_order")),
+      safeRead<
+        {
+          id: string;
+          skill_variation_id: number;
+          attempts: number | null;
+          successful_attempts: number | null;
+          best_hold_seconds: number | null;
+          sessions: unknown;
+        }[]
+      >((c) =>
+        c
+          .from("calisthenics_entries")
+          .select(
+            "id, skill_variation_id, attempts, successful_attempts, best_hold_seconds, sessions(session_date)",
+          ),
+      ),
+      safeRead<SkillVariation[]>((c) => c.from("skill_variations").select("*")),
+      safeRead<Skill[]>((c) => c.from("skills").select("*")),
+    ]);
+
+  // --- snatch: stand rate per week, per load -------------------------------
+  const byLoad = new Map<number, { week: string; attempts: number; stood: number }[]>();
+  for (const row of snatchWeekly.data ?? []) {
+    const load = Number(row.weight_kg);
+    const list = byLoad.get(load) ?? [];
+    list.push({ week: row.week_start, attempts: row.attempts ?? 0, stood: row.stood ?? 0 });
+    byLoad.set(load, list);
+  }
+
+  // --- snatch: tonnage per week, warm-up kept apart ------------------------
+  const tonnage = new Map<string, { working: number; warmup: number }>();
+  for (const b of snatchBlocks.data ?? []) {
+    const week = weekStartOf(b.session_date);
+    const entry = tonnage.get(week) ?? { working: 0, warmup: 0 };
+    const kg = Number(b.weight_kg ?? 0) * Number(b.attempts ?? 0);
+    if (b.is_warmup) entry.warmup += kg;
+    else entry.working += kg;
+    tonnage.set(week, entry);
+  }
+
+  // --- hypertrophy: sets and volume per week -------------------------------
+  const groupOf = new Map(
+    (exercises.data ?? []).map((e) => [e.id, e.muscle_group_id as number | null]),
+  );
+  const groupName = new Map((groups.data ?? []).map((g) => [g.id, g.slug]));
+  const perWeek = new Map<string, { groups: Record<string, number>; volume: number }>();
+  for (const row of sets.data ?? []) {
+    const date = (row.sessions as unknown as { session_date: string } | null)?.session_date;
+    if (!date || date < from || date > to) continue;
+    const week = weekStartOf(date);
+    const entry = perWeek.get(week) ?? { groups: {}, volume: 0 };
+    const slug = groupName.get(groupOf.get(row.exercise_id) ?? -1) ?? "unassigned";
+    entry.groups[slug] = (entry.groups[slug] ?? 0) + 1;
+    entry.volume += Number(row.volume_load_kg ?? 0);
+    perWeek.set(week, entry);
+  }
+
+  // --- calisthenics: per variation, never pooled ---------------------------
+  const inWindow = (entries.data ?? []).filter((e) => {
+    const date = (e.sessions as unknown as { session_date: string } | null)?.session_date;
+    return date && date >= from && date <= to;
+  });
+  const attemptRows = inWindow.length
+    ? await safeRead<
+        { entry_id: string; succeeded: boolean | null; hold_seconds: number | null }[]
+      >((c) =>
+        c
+          .from("calisthenics_attempts")
+          .select("entry_id, succeeded, hold_seconds")
+          .in(
+            "entry_id",
+            inWindow.map((e) => e.id),
+          ),
+      )
+    : { data: [], error: null };
+
+  const variationName = new Map((variations.data ?? []).map((v) => [v.id, v]));
+  const skillName = new Map((skills.data ?? []).map((k) => [k.id, k.name]));
+  const perVariation = new Map<
+    number,
+    { attempts: number; successes: number; best: number | null; entries: number; rows: number }
+  >();
+  for (const entry of inWindow) {
+    const rows = (attemptRows.data ?? []).filter((a) => a.entry_id === entry.id);
+    const acc = perVariation.get(entry.skill_variation_id) ?? {
+      attempts: 0,
+      successes: 0,
+      best: null,
+      entries: 0,
+      rows: 0,
+    };
+    acc.entries += 1;
+    if (rows.length > 0) {
+      acc.rows += 1;
+      acc.attempts += rows.length;
+      acc.successes += rows.filter((a) => a.succeeded).length;
+      for (const r of rows) {
+        const hold = r.succeeded && r.hold_seconds != null ? Number(r.hold_seconds) : null;
+        if (hold !== null && (acc.best === null || hold > acc.best)) acc.best = hold;
+      }
+    } else {
+      acc.attempts += entry.attempts ?? 0;
+      acc.successes += entry.successful_attempts ?? 0;
+      const hold = entry.best_hold_seconds == null ? null : Number(entry.best_hold_seconds);
+      if (hold !== null && (acc.best === null || hold > acc.best)) acc.best = hold;
+    }
+    perVariation.set(entry.skill_variation_id, acc);
+  }
+
+  return {
+    from,
+    to,
+    weeks,
+    snatchByLoad: [...byLoad.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([load_kg, points]) => ({ load_kg, points })),
+    snatchTonnage: [...tonnage.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([week, v]) => ({ week, ...v })),
+    setsByGroup: [...perWeek.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([week, v]) => ({ week, groups: v.groups })),
+    volumeByWeek: [...perWeek.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([week, v]) => ({ week, value: v.volume })),
+    skills: [...perVariation.entries()]
+      .map(([id, v]) => {
+        const variation = variationName.get(id);
+        return {
+          variation: variation?.name ?? "Skill",
+          skill: skillName.get(variation?.skill_id ?? -1) ?? "",
+          difficulty: variation?.difficulty ?? null,
+          attempts: v.attempts,
+          successes: v.successes,
+          bestHoldSeconds: v.best,
+          entries: v.entries,
+          basis:
+            v.rows === v.entries ? ("attempt" as const)
+            : v.rows === 0 ? ("summary" as const)
+            : ("mixed" as const),
+        };
+      })
+      .sort((a, b) => b.attempts - a.attempts),
+    error: snatchWeekly.error ?? sets.error ?? entries.error,
+  };
+}
+
+/** Monday of the ISO week, matching fitness.week_start. */
+function weekStartOf(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  const iso = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - iso);
+  return d.toISOString().slice(0, 10);
+}
