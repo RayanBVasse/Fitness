@@ -349,11 +349,12 @@ async function exerciseProgress(args: { exercise: string; days?: number }): Prom
   const [{ data, error }, gymRows] = await Promise.all([
     db
       .from("hypertrophy_sets")
+      // One string literal, not a concatenation: the client parses this at
+      // type level to know the row shape, and cannot read an expression.
       .select(
-        "load_kg, reps, sets_count, is_drop, rir, machine_label, session_id, sessions(session_date, gym_id)",
+        "id, parent_set_id, load_kg, reps, sets_count, is_drop, side, rir, machine_label, notes, order_vs_snatch, provenance, volume_load_kg, session_id, sessions(session_date, gym_id)",
       )
-      .eq("exercise_id", exercise.data.id)
-      .eq("is_drop", false),
+      .eq("exercise_id", exercise.data.id),
     db.from("gyms").select("id, name"),
   ]);
   if (error) throw new Error(error.message);
@@ -374,25 +375,50 @@ async function exerciseProgress(args: { exercise: string; days?: number }): Prom
         load_kg: r.load_kg === null ? null : Number(r.load_kg),
         reps: r.reps,
         sets: r.sets_count,
+        volume_load_kg: r.volume_load_kg === null ? null : Number(r.volume_load_kg),
         rir: r.rir ?? null,
+        // A drop is not a working set at that load. It is included because
+        // leaving it out hid half of what a heavy set actually involved, and
+        // labelled because counting it as a working set would overstate what
+        // was lifted fresh.
+        is_drop: Boolean(r.is_drop),
+        dropped_from: r.parent_set_id ?? null,
+        set_id: r.id,
+        // Unilateral work: a left and a right are two sets, not one set twice.
+        side: r.side ?? null,
+        order_vs_snatch: r.order_vs_snatch ?? null,
+        notes: r.notes ?? null,
+        // Logged here, or reconstructed from conversation. The two are not
+        // the same kind of fact and must not be averaged together.
+        provenance: r.provenance ?? null,
       };
     })
     .filter((r) => r.date && r.date >= window.from && r.date <= window.to)
     .sort((a, b) => (a.date! < b.date! ? -1 : 1));
 
+  // Working sets only decide whether there is enough here. One heavy set and
+  // the drop off the end of it is one set, not two.
+  const working = rows.filter((r) => !r.is_drop).length;
+
   return {
     tool: "exercise_progress",
     window,
     n: rows.length,
-    insufficient: rows.length < 2,
+    insufficient: working < 2,
     note:
       rows.length < 2
-        ? `${rows.length} sets of ${exercise.data.name} in this window.`
-        : "Compare loads only within the same gym AND the same machine. Two sets " +
-          "of the same exercise in one gym can be on different stations, and a " +
-          "null machine means the station was not recorded — not that it was the " +
-          "same one. RIR is the athlete's estimate, not a measurement.",
-    data: { exercise: exercise.data.name, sets: rows },
+        ? `${working} working sets of ${exercise.data.name} in this window.`
+        : "Every set of this exercise, with what it was done on. Compare loads " +
+          "only within the same gym AND the same machine: two sets in one gym " +
+          "can be on different stations, and a null machine means the station " +
+          "was not recorded, not that it was the same one. `machine` is the " +
+          "athlete's own words — cable, rope, seated, which handle — and is " +
+          "the finest detail available about what a load was lifted on. " +
+          "`is_drop` sets hang off `dropped_from` and are not working sets at " +
+          "that load; count them separately or not at all. RIR is an estimate, " +
+          "not a measurement, and `provenance` says which rows were logged here " +
+          "and which were reconstructed.",
+    data: { exercise: exercise.data.name, working_sets: working, sets: rows },
   };
 }
 
