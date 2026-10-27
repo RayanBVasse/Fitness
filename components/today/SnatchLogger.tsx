@@ -121,7 +121,10 @@ export function SnatchLogger({
         is_warmup: opts?.warmup ?? false,
         is_cooldown: opts?.cooldown ?? false,
       });
-      setBlocks((prev) => [...prev, result.weight_block]);
+      // The server may have continued an existing block rather than made
+      // one. Appending it blindly would show the same row twice until the
+      // next refresh.
+      setBlocks((prev) => upsert(prev, result.weight_block));
       setOpenBlockId(result.weight_block.id);
     });
   }
@@ -184,11 +187,29 @@ export function SnatchLogger({
     });
   }
 
-  function removeBlock(id: string) {
+  /**
+   * The cross on a row: one lift off the end, and the row with it once the
+   * last one goes. Taking a whole block away in a single unconfirmed tap was
+   * destroying four records to correct one.
+   */
+  function removeLastLift(id: string) {
     run(async () => {
-      await write({ action: "delete_weight_block", weight_block_id: id });
-      setBlocks((prev) => prev.filter((b) => b.id !== id));
-      if (openBlockId === id) setOpenBlockId(null);
+      const result = await write<{
+        removed_attempt?: string;
+        removed_block?: string;
+        weight_block?: SnatchBlock;
+      }>({ action: "remove_last_lift", weight_block_id: id });
+
+      if (result.removed_attempt) {
+        setAttempts((prev) => prev.filter((a) => a.id !== result.removed_attempt));
+      }
+      if (result.removed_block) {
+        setBlocks((prev) => prev.filter((b) => b.id !== result.removed_block));
+        if (openBlockId === result.removed_block) setOpenBlockId(null);
+      } else if (result.weight_block) {
+        const updated = result.weight_block;
+        setBlocks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+      }
     });
   }
 
@@ -257,7 +278,7 @@ export function SnatchLogger({
         });
         created.push(result.weight_block);
       }
-      setBlocks((prev) => [...prev, ...created]);
+      setBlocks((prev) => created.reduce(upsert, prev));
       if (created.length) setOpenBlockId(created[0].id);
     });
   }
@@ -559,10 +580,12 @@ export function SnatchLogger({
                   <button
                     type="button"
                     disabled={!canWrite || busy}
-                    onClick={() => removeBlock(block.id)}
-                    aria-label={`Delete the whole ${trim(
-                      Number(block.weight_kg ?? 0),
-                    )} kg block and its ${lifts.length} lifts`}
+                    onClick={() => removeLastLift(block.id)}
+                    aria-label={
+                      lifts.length > 1
+                        ? `Remove the last lift of ${trim(Number(block.weight_kg ?? 0))} kg`
+                        : `Remove the ${trim(Number(block.weight_kg ?? 0))} kg row`
+                    }
                     className="min-h-[30px] shrink-0 px-1 text-sm text-text-dim disabled:opacity-40"
                   >
                     ×
@@ -710,6 +733,13 @@ function AttemptDetail({
       ) : null}
     </div>
   );
+}
+
+/** Replace a block if it is already held, append it if it is not. */
+function upsert(blocks: SnatchBlock[], block: SnatchBlock): SnatchBlock[] {
+  return blocks.some((b) => b.id === block.id)
+    ? blocks.map((b) => (b.id === block.id ? block : b))
+    : [...blocks, block];
 }
 
 function sum(values: (number | null)[]): number {

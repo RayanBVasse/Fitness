@@ -227,6 +227,10 @@ const Actions = z.discriminatedUnion("action", [
     notes: z.string().max(2000).nullable().optional(),
   }),
   z.object({
+    action: z.literal("remove_last_lift"),
+    weight_block_id: uuid,
+  }),
+  z.object({
     action: z.literal("delete_weight_block"),
     weight_block_id: uuid,
   }),
@@ -882,24 +886,31 @@ export async function POST(request: Request) {
       }
 
       case "open_weight_block": {
-        // One block per load, variation and strap setting in a session.
-        // Opening 45 kg a second time continues the first one rather than
-        // starting a rival: two blocks that differ in nothing are two
-        // records of one thing, and the list then has to merge them back
-        // together and loses the ability to address either.
-        const { data: existing, error: existingError } = await db
+        // Continue the block you are already on; start a new one otherwise.
+        //
+        // Only the MOST RECENT block is a candidate. Tapping 45 twice in a
+        // row is one bout and must not produce two identical rows — that was
+        // the original complaint. But 45, then 47.5, then 45 again on the way
+        // down is two separate bouts at 45, and folding the second into the
+        // first would file lifts under a row that sits above the heavier work
+        // they came after. The order you lifted in is part of the record.
+        const { data: latest, error: latestError } = await db
           .from("snatch_blocks")
           .select("*")
           .eq("session_id", input.session_id)
-          .eq("weight_kg", input.weight_kg)
-          .eq("variation_id", input.variation_id)
-          .order("logged_at")
-          .limit(1);
-        if (existingError) throw existingError;
-        const match = (existing ?? []).find(
-          (b) => Boolean(b.straps) === Boolean(input.straps),
-        );
-        if (match) return NextResponse.json({ weight_block: match, reused: true });
+          .order("logged_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (latestError) throw latestError;
+
+        const continues =
+          latest &&
+          Number(latest.weight_kg) === Number(input.weight_kg) &&
+          latest.variation_id === input.variation_id &&
+          Boolean(latest.straps) === Boolean(input.straps);
+        if (continues) {
+          return NextResponse.json({ weight_block: latest, reused: true });
+        }
 
         const { data, error } = await db
           .from("snatch_blocks")
@@ -1049,6 +1060,60 @@ export async function POST(request: Request) {
           .single();
         if (error) throw error;
         return NextResponse.json({ weight_block: data });
+      }
+
+      case "remove_last_lift": {
+        // What the cross on a row does. Removing four lifts in one unconfirmed
+        // tap is not an undo, and every lift is individually removable by
+        // opening it, so this takes the most recent one off the end.
+        const { data: last, error: lastError } = await db
+          .from("snatch_attempts")
+          .select("id")
+          .eq("block_id", input.weight_block_id)
+          .order("ordinal", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (lastError) throw lastError;
+
+        if (!last) {
+          // Nothing individual to remove: either the block was opened and
+          // never used, or it is imported history recorded as a total. The
+          // block itself is the only thing there is to take away.
+          const { error } = await db
+            .from("snatch_blocks")
+            .delete()
+            .eq("id", input.weight_block_id);
+          if (error) throw error;
+          return NextResponse.json({ removed_block: input.weight_block_id });
+        }
+
+        const { error: deleteError } = await db
+          .from("snatch_attempts")
+          .delete()
+          .eq("id", last.id);
+        if (deleteError) throw deleteError;
+
+        // The trigger has recounted the block. An empty one is a row that
+        // claims a load was worked when nothing was.
+        const { data: block, error: blockError } = await db
+          .from("snatch_blocks")
+          .select("*")
+          .eq("id", input.weight_block_id)
+          .single();
+        if (blockError) throw blockError;
+
+        if (!block.attempts) {
+          const { error } = await db
+            .from("snatch_blocks")
+            .delete()
+            .eq("id", input.weight_block_id);
+          if (error) throw error;
+          return NextResponse.json({
+            removed_attempt: last.id,
+            removed_block: input.weight_block_id,
+          });
+        }
+        return NextResponse.json({ removed_attempt: last.id, weight_block: block });
       }
 
       case "delete_weight_block": {
