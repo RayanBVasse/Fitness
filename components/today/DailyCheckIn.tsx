@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
-import { SectionTitle } from "@/components/ui";
+import { SectionTitle, wsColour } from "@/components/ui";
 import {
   NOTE_CATEGORY_LABELS,
   WORKSTREAM_LABELS,
@@ -212,16 +212,38 @@ export function DailyCheckIn({
             Written about this day
           </div>
           <ul className="space-y-1.5">
-            {notes.map((note) => (
-              <li key={note.id} className="rounded-[var(--radius)] bg-surface-2 px-3 py-2">
-                <div className="text-[10px] uppercase tracking-wide text-text-dim">
-                  {note.workstream ? `${WORKSTREAM_LABELS[note.workstream]} \u00b7 ` : ""}
-                  {NOTE_CATEGORY_LABELS[note.category as NoteCategory] ?? note.category}
-                  {note.tags.includes("important") ? " \u00b7 important" : ""}
-                </div>
-                <p className="mt-0.5 whitespace-pre-wrap text-sm leading-snug">{note.content}</p>
-              </li>
-            ))}
+            {notes.map((note) => {
+              // A note wears its workstream's colour, the same hue that
+              // workstream's figures carry below. Reading a stripe is faster
+              // than reading a label, and relating the two is the whole point
+              // of having them on one screen. A note about the day as a whole
+              // belongs to no workstream and stays neutral.
+              const hue = note.workstream ? wsColour(note.workstream) : "var(--border)";
+              return (
+                <li
+                  key={note.id}
+                  className="overflow-hidden rounded-[var(--radius)] px-3 py-2"
+                  style={{
+                    borderLeft: `4px solid ${hue}`,
+                    background: note.workstream
+                      ? `color-mix(in oklab, ${hue} 8%, var(--surface-2))`
+                      : "var(--surface-2)",
+                  }}
+                >
+                  <div
+                    className="text-[10px] uppercase tracking-wide"
+                    style={{ color: note.workstream ? hue : "var(--text-dim)" }}
+                  >
+                    {note.workstream ? `${WORKSTREAM_LABELS[note.workstream]} \u00b7 ` : ""}
+                    {NOTE_CATEGORY_LABELS[note.category as NoteCategory] ?? note.category}
+                    {note.tags.includes("important") ? " \u00b7 important" : ""}
+                  </div>
+                  <p className="mt-0.5 whitespace-pre-wrap text-sm leading-snug">
+                    {note.content}
+                  </p>
+                </li>
+              );
+            })}
           </ul>
           <p className="mt-2 text-[10px] leading-snug text-text-dim">
             Shown here, edited where they were written — against the day, or inside a
