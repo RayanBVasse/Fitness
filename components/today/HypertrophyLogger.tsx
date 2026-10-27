@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { Chip, SectionTitle, mgColour, wsColour } from "@/components/ui";
+import { Collapsible } from "@/components/Collapsible";
 import type {
   Exercise,
   HypertrophySet,
@@ -281,6 +282,11 @@ export function HypertrophyLogger({
         Hypertrophy
       </SectionTitle>
 
+      <Collapsible
+        label="Exercise"
+        hint={exercise ? exercise.name : undefined}
+        startOpen={sets.length === 0}
+      >
       {/* Region first. A day is a region, not an exercise. */}
       <div className="flex flex-wrap gap-1.5">
         {muscleRegions.map((region) => (
@@ -350,6 +356,7 @@ export function HypertrophyLogger({
           No exercises in this region yet. Settings lists which muscle groups it covers.
         </p>
       )}
+      </Collapsible>
 
       {exercise ? (
         <div

@@ -1,5 +1,6 @@
 import { SectionTitle, mgColour, wsColour } from "@/components/ui";
 import type {
+  CalisthenicsAttempt,
   CalisthenicsEntry,
   Exercise,
   HypertrophySet,
@@ -24,6 +25,7 @@ type Props = {
   snatchBlocks: SnatchBlock[];
   hypertrophySets: HypertrophySet[];
   calisthenicsEntries: CalisthenicsEntry[];
+  calisthenicsAttempts: CalisthenicsAttempt[];
   variations: SnatchVariation[];
   exercises: Exercise[];
   muscleGroups: MuscleGroup[];
@@ -38,6 +40,7 @@ export function DayPerformance({
   snatchBlocks,
   hypertrophySets,
   calisthenicsEntries,
+  calisthenicsAttempts,
   variations,
   exercises,
   muscleGroups,
@@ -78,14 +81,28 @@ export function DayPerformance({
   }
 
   // --- calisthenics --------------------------------------------------------
-  const skillAttempts = calisthenicsEntries.reduce((t, e) => t + num(e.attempts), 0);
-  const skillSuccesses = calisthenicsEntries.reduce(
-    (t, e) => t + num(e.successful_attempts),
-    0,
-  );
-  const holds = calisthenicsEntries
-    .map((e) => num(e.best_hold_seconds))
-    .filter((v) => v > 0);
+  // Counted from the attempt rows, which is where a logged entry keeps its
+  // outcomes. Reading the entry's summary columns reported "no counts
+  // recorded" for a session with eight attempts in it, because those columns
+  // are only filled for the imported history — which is why each entry falls
+  // back to them when it has no rows of its own.
+  let skillAttempts = 0;
+  let skillSuccesses = 0;
+  const holds: number[] = [];
+  for (const entry of calisthenicsEntries) {
+    const rows = calisthenicsAttempts.filter((a) => a.entry_id === entry.id);
+    if (rows.length > 0) {
+      skillAttempts += rows.length;
+      skillSuccesses += rows.filter((a) => a.succeeded).length;
+      for (const row of rows) {
+        if (row.succeeded && num(row.hold_seconds) > 0) holds.push(num(row.hold_seconds));
+      }
+    } else {
+      skillAttempts += num(entry.attempts);
+      skillSuccesses += num(entry.successful_attempts);
+      if (num(entry.best_hold_seconds) > 0) holds.push(num(entry.best_hold_seconds));
+    }
+  }
   const bestHold = holds.length > 0 ? Math.max(...holds) : null;
 
   return (

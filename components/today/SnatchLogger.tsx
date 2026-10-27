@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { Pill, SectionTitle, wsColour } from "@/components/ui";
+import { Collapsible } from "@/components/Collapsible";
 import { OUTCOME_LABELS } from "@/lib/types";
 import type {
   FailureMode,
@@ -302,72 +303,79 @@ export function SnatchLogger({
           Snatch
         </SectionTitle>
 
-        {/* Variation and straps apply to the next block opened. */}
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <select
-            value={variationId}
-            onChange={(event) => setVariationId(Number(event.target.value))}
-            className="min-h-[40px] rounded-[var(--radius)] border border-border bg-surface-2 px-2 text-sm"
-            aria-label="Lift variation"
-          >
-            {variations.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.name}
-                {v.counts_as_full_lift ? "" : " (not a full lift)"}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => setStraps((s) => !s)}
-            aria-pressed={straps}
-            className="min-h-[40px] rounded-[var(--radius)] border px-3 text-sm font-medium"
-            style={{
-              borderColor: straps ? wsColour("snatch") : "var(--border)",
-              color: straps ? wsColour("snatch") : "var(--text-dim)",
-            }}
-          >
-            Straps {straps ? "on" : "off"}
-          </button>
-        </div>
+        <Collapsible
+          label="Load"
+          hint={openBlock ? `${trim(Number(openBlock.weight_kg ?? 0))} kg open` : undefined}
+          startOpen={blocks.length === 0}
+        >
+          {/* Variation and straps apply to the next block opened. */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <select
+              value={variationId}
+              onChange={(event) => setVariationId(Number(event.target.value))}
+              className="min-h-[40px] rounded-[var(--radius)] border border-border bg-surface-2 px-2 text-sm"
+              aria-label="Lift variation"
+            >
+              {variations.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                  {v.counts_as_full_lift ? "" : " (not a full lift)"}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setStraps((s) => !s)}
+              aria-pressed={straps}
+              className="min-h-[40px] rounded-[var(--radius)] border px-3 text-sm font-medium"
+              style={{
+                borderColor: straps ? wsColour("snatch") : "var(--border)",
+                color: straps ? wsColour("snatch") : "var(--text-dim)",
+              }}
+            >
+              Straps {straps ? "on" : "off"}
+            </button>
+          </div>
 
-        {/* Load presets. One tap opens a block at that weight. */}
-        <div className="grid grid-cols-5 gap-1.5">
-          {presets.map((preset) => {
-            const weight = Number(preset.weight_kg);
-            const inLadder = ladderWeights.includes(weight);
-            return (
-              <button
-                key={preset.weight_kg}
-                type="button"
-                disabled={!canWrite || busy}
-                onClick={() => openWeight(weight)}
-                className="tnum min-h-[44px] rounded-[var(--radius)] border text-sm font-semibold disabled:opacity-40"
-                style={{
-                  borderColor: inLadder ? wsColour("snatch") : "var(--border)",
-                  background: "var(--surface-2)",
-                }}
-              >
-                {trim(weight)}
-              </button>
-            );
-          })}
-        </div>
-        {ladder && ladderWeights.some((w) => !blocks.some((b) => Number(b.weight_kg) === w)) ? (
-          <button
-            type="button"
-            disabled={!canWrite || busy}
-            onClick={openLadder}
-            className="mt-2 min-h-[44px] w-full rounded-[var(--radius)] border border-dashed border-border text-sm font-semibold text-text-dim disabled:opacity-40"
-          >
-            Open usual ladder ({ladderWeights.map((w) => trim(w)).join(" · ")})
-          </button>
-        ) : null}
+          {/* Load presets. One tap opens a block at that weight. */}
+          <div className="grid grid-cols-5 gap-1.5">
+            {presets.map((preset) => {
+              const weight = Number(preset.weight_kg);
+              const inLadder = ladderWeights.includes(weight);
+              return (
+                <button
+                  key={preset.weight_kg}
+                  type="button"
+                  disabled={!canWrite || busy}
+                  onClick={() => openWeight(weight)}
+                  className="tnum min-h-[44px] rounded-[var(--radius)] border text-sm font-semibold disabled:opacity-40"
+                  style={{
+                    borderColor: inLadder ? wsColour("snatch") : "var(--border)",
+                    background: "var(--surface-2)",
+                  }}
+                >
+                  {trim(weight)}
+                </button>
+              );
+            })}
+          </div>
+          {ladder && ladderWeights.some((w) => !blocks.some((b) => Number(b.weight_kg) === w)) ? (
+            <button
+              type="button"
+              disabled={!canWrite || busy}
+              onClick={openLadder}
+              className="mt-2 min-h-[44px] w-full rounded-[var(--radius)] border border-dashed border-border text-sm font-semibold text-text-dim disabled:opacity-40"
+            >
+              Open usual ladder ({ladderWeights.map((w) => trim(w)).join(" · ")})
+            </button>
+          ) : null}
 
-        <p className="mt-1.5 text-[10px] leading-snug text-text-faint">
-          Outlined loads are your usual ladder. The ladder opens blocks only — outcomes are
-          always yours to tap.
-        </p>
+          <p className="mt-1.5 text-[10px] leading-snug text-text-faint">
+            Outlined loads are your usual ladder. The ladder opens blocks only — outcomes are
+            always yours to tap.
+          </p>
+        </Collapsible>
+
       </div>
 
       {/* The open block: the rapid-tap surface. */}

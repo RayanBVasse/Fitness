@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { Chip, SectionTitle, wsColour } from "@/components/ui";
+import { Collapsible } from "@/components/Collapsible";
 import type {
   AssistanceType,
   CalisthenicsAttempt,
@@ -213,6 +214,11 @@ export function CalisthenicsLogger({
         Calisthenics
       </SectionTitle>
 
+      <Collapsible
+        label="Skill"
+        hint={variation ? variation.name : undefined}
+        startOpen={entries.length === 0}
+      >
       <div className="flex flex-wrap gap-1.5">
         {(showAll ? variations : recent).map((v) => (
           <Chip key={v.id} on={v.id === variationId} hue={hue} onClick={() => choose(v.id)}>
@@ -230,6 +236,7 @@ export function CalisthenicsLogger({
           {showAll ? "Recent only" : `All ${variations.length}`}
         </button>
       </div>
+      </Collapsible>
 
       {variation ? (
         <div

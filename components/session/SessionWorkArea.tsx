@@ -290,6 +290,7 @@ export function SessionWorkArea({
           snatchBlocks={snatchBlocks}
           hypertrophySets={hypertrophySets}
           calisthenicsEntries={calisthenicsEntries}
+          calisthenicsAttempts={calisthenicsAttempts}
           variations={variations}
           exercises={exercises}
           muscleGroups={muscleGroups}
