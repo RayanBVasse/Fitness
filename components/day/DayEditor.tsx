@@ -340,6 +340,7 @@ export function DayEditor({
             defs={metricDefs}
             saved={metrics}
             lastValues={lastMetricValues}
+          notes={notes}
             canWrite={!busy}
           />
         </Card>

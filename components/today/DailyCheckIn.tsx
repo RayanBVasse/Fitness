@@ -4,7 +4,14 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { SectionTitle } from "@/components/ui";
-import type { DailyMetric, DailyMetricDef } from "@/lib/types";
+import {
+  NOTE_CATEGORY_LABELS,
+  WORKSTREAM_LABELS,
+  type ContextNote,
+  type DailyMetric,
+  type DailyMetricDef,
+  type NoteCategory,
+} from "@/lib/types";
 
 /**
  * Quick mode: the check-in that has to take under half a minute, or it stops
@@ -21,6 +28,16 @@ import type { DailyMetric, DailyMetricDef } from "@/lib/types";
  * A 0-10 judgement is a tap on its number, not a drag: dragging a slider to
  * exactly 7 is a fiddly act of aim, and eight of them stacked full-width was a
  * screenful of scrolling for thirty seconds of honesty.
+ *
+ * Nothing is saved by pressing anything. A tap on a number is the record, as
+ * it is everywhere else in this app; numbers typed and text written commit
+ * when you leave the field. A Save button turns an answered question into an
+ * unsaved one, and the one thing worse than a blank field is a filled-in
+ * field whose value never reached the database.
+ *
+ * The day's notes sit at the foot, read-only. They are written where they
+ * belong - in a workstream, or against the day - and shown here because the
+ * check-in is where you reconstruct how the day went.
  */
 
 type Props = {
@@ -29,18 +46,27 @@ type Props = {
   saved: DailyMetric[];
   /** The last value recorded before this day, shown as a reference only. */
   lastValues?: (DailyMetric & { metric_date: string })[];
+  /** Everything written about this day, shown here but edited elsewhere. */
+  notes?: ContextNote[];
   canWrite: boolean;
 };
 
 type Draft = Record<string, { numeric: number | null; text: string | null }>;
 
-export function DailyCheckIn({ date, defs, saved, lastValues = [], canWrite }: Props) {
+export function DailyCheckIn({
+  date,
+  defs,
+  saved,
+  lastValues = [],
+  notes = [],
+  canWrite,
+}: Props) {
   const router = useRouter();
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const initial = useMemo<Draft>(() => {
     const draft: Draft = {};
@@ -63,25 +89,28 @@ export function DailyCheckIn({ date, defs, saved, lastValues = [], canWrite }: P
     (v) => v.numeric !== null || (v.text && v.text.trim()),
   ).length;
 
-  function set(slug: string, value: Partial<{ numeric: number | null; text: string | null }>) {
-    setJustSaved(false);
-    setDraft((prev) => ({ ...prev, [slug]: { ...prev[slug], ...value } }));
-  }
-
-  function save() {
+  /**
+   * One field, one write. Sending the whole draft each time would rewrite
+   * every other dimension too, so a stale tab could quietly undo a value
+   * recorded on your phone an hour earlier.
+   */
+  function set(
+    slug: string,
+    value: Partial<{ numeric: number | null; text: string | null }>,
+  ) {
+    const next = { ...draft[slug], ...value };
+    setDraft((prev) => ({ ...prev, [slug]: next }));
     setError(null);
     startTransition(async () => {
       try {
         await write({
           action: "save_check_in",
           date,
-          metrics: Object.entries(draft).map(([metric, value]) => ({
-            metric,
-            value_numeric: value.numeric,
-            value_text: value.text,
-          })),
+          metrics: [
+            { metric: slug, value_numeric: next.numeric, value_text: next.text },
+          ],
         });
-        setJustSaved(true);
+        setSavedAt(slug);
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -158,31 +187,48 @@ export function DailyCheckIn({ date, defs, saved, lastValues = [], canWrite }: P
         })}
       </div>
 
-      <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          onClick={save}
-          disabled={!canWrite || busy}
-          className="min-h-[48px] flex-1 rounded-[var(--radius)] text-base font-bold disabled:opacity-40"
-          style={{ background: "var(--accent)", color: "var(--accent-text)" }}
-        >
-          {busy ? "Saving…" : justSaved ? "Saved" : "Save check-in"}
-        </button>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <p className="text-[11px] leading-snug text-text-dim">
+          {busy
+            ? "Saving\u2026"
+            : savedAt
+              ? "Saved as you go."
+              : "All optional. An untouched field stays unrecorded rather than becoming a zero; tap a selected number again to clear it."}
+        </p>
         {rest.length > 0 ? (
           <button
             type="button"
             onClick={() => setExpanded((e) => !e)}
-            className="min-h-[48px] rounded-[var(--radius)] border border-border px-3 text-sm font-semibold"
+            className="min-h-[40px] shrink-0 rounded-[var(--radius)] border border-border px-3 text-sm font-semibold"
           >
             {expanded ? "Fewer" : `+${rest.length} more`}
           </button>
         ) : null}
       </div>
 
-      <p className="mt-2 text-[11px] leading-snug text-text-faint">
-        All optional, and editable through the day. An untouched field stays unrecorded rather
-        than becoming a zero; tap a selected number again to clear it.
-      </p>
+      {notes.length > 0 ? (
+        <div className="mt-4 border-t border-border pt-3">
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.08em] text-text-dim">
+            Written about this day
+          </div>
+          <ul className="space-y-1.5">
+            {notes.map((note) => (
+              <li key={note.id} className="rounded-[var(--radius)] bg-surface-2 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-text-dim">
+                  {note.workstream ? `${WORKSTREAM_LABELS[note.workstream]} \u00b7 ` : ""}
+                  {NOTE_CATEGORY_LABELS[note.category as NoteCategory] ?? note.category}
+                  {note.tags.includes("important") ? " \u00b7 important" : ""}
+                </div>
+                <p className="mt-0.5 whitespace-pre-wrap text-sm leading-snug">{note.content}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[10px] leading-snug text-text-dim">
+            Shown here, edited where they were written — against the day, or inside a
+            workstream.
+          </p>
+        </div>
+      ) : null}
 
       {error ? (
         <p className="mt-2 text-sm" style={{ color: "var(--missed)" }}>
@@ -351,19 +397,30 @@ function NumberField({
         <LastHint last={last} unit={def.unit} disabled={disabled} onAdopt={onChange} />
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
+        {/* Typed locally, written on blur or Enter. With nothing to press,
+            a write per keystroke would send "5", "54", "54." and "54.3" for
+            one bodyweight. */}
         <input
           id={`m-${def.slug}`}
           type="number"
           inputMode="decimal"
-          value={value ?? ""}
+          defaultValue={value ?? ""}
+          key={value ?? "empty"}
           min={def.min_value ?? undefined}
           max={def.max_value ?? undefined}
           step={def.step ?? "any"}
           disabled={disabled}
           placeholder="—"
-          onChange={(event) =>
+          onBlur={(event) =>
             onChange(event.target.value === "" ? null : Number(event.target.value))
           }
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              const raw = event.currentTarget.value;
+              onChange(raw === "" ? null : Number(raw));
+            }
+          }}
           className="tnum h-10 w-20 rounded-[var(--radius)] border border-border bg-surface-2 px-2 text-right text-base"
         />
         {def.unit ? <span className="text-[11px] text-text-faint">{def.unit}</span> : null}
@@ -388,13 +445,15 @@ function TextField({
       <label htmlFor={`m-${def.slug}`} className="text-sm font-medium">
         {def.label}
       </label>
+      {/* Written when you leave the field, for the same reason. */}
       <textarea
         id={`m-${def.slug}`}
-        value={value}
+        defaultValue={value}
+        key={value}
         disabled={disabled}
         rows={2}
         placeholder={def.help ?? undefined}
-        onChange={(event) => onChange(event.target.value)}
+        onBlur={(event) => onChange(event.target.value)}
         className="mt-1 w-full rounded-[var(--radius)] border border-border bg-surface-2 px-3 py-2 text-sm"
       />
     </div>

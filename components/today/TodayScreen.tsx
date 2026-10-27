@@ -183,6 +183,7 @@ export function TodayScreen({
             defs={metricDefs}
             saved={metrics}
             lastValues={lastMetricValues}
+            notes={notes}
             canWrite={canWrite}
           />
         </Card>
