@@ -540,14 +540,20 @@ export function SnatchLogger({
                     ) : null}
                     {quality && lifts.length === 0 ? <Pill tone="accent">{quality}</Pill> : null}
                     {block.straps ? <Pill>straps</Pill> : null}
-                    {/* Only when it is not the ordinary case. A full snatch is
-                        the default, and saying so on every row is noise — but
-                        a variation that differs is exactly what made two
-                        identical-looking rows refuse to merge. */}
-                    {variation && variation.slug !== "full_snatch" ? (
-                      <Pill tone={variation.counts_as_full_lift ? "neutral" : "caught"}>
-                        {variation.name}
-                      </Pill>
+                    {/* Always named. Leaving the ordinary case blank saves a
+                        little room and says nothing: an empty space only
+                        reads as "full snatch" if you already know that is
+                        what it means. A variation that does not count as a
+                        full lift keeps the louder pill, because it carries
+                        tonnage but never a success rate. */}
+                    {variation ? (
+                      variation.counts_as_full_lift ? (
+                        <span className="truncate text-[11px] text-text-dim">
+                          {variation.name}
+                        </span>
+                      ) : (
+                        <Pill tone="caught">{variation.name}</Pill>
+                      )
                     ) : null}
                   </button>
                   <button
