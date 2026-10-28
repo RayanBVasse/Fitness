@@ -3,6 +3,7 @@ import { londonToday } from "./time";
 import type { ThirdParty } from "./coach/verify";
 import type {
   AssistanceType,
+  BodySide,
   CalisthenicsAttempt,
   CalisthenicsEntry,
   CoachReview,
@@ -746,6 +747,35 @@ export interface ProgressCounts {
   calisthenicsAttempts: number;
 }
 
+/** One logged row, as the drill-down reads it. */
+export interface SetEntry {
+  date: string;
+  load: number | null;
+  reps: number | null;
+  setsCount: number;
+  rir: number | null;
+  volume: number;
+  isDrop: boolean;
+  side: BodySide;
+}
+
+/** One exercise on one machine at one gym — the only comparable unit. */
+export interface Setup {
+  /** Machine and gym as recorded. Null where neither was noted. */
+  machine: string | null;
+  gym: string | null;
+  sets: number;
+  entries: SetEntry[];
+}
+
+export interface ExerciseDetail {
+  exerciseId: number;
+  exercise: string;
+  group: string;
+  sets: number;
+  setups: Setup[];
+}
+
 export interface ProgressData {
   /** The window asked for. `from` is 1970 for "all", which is not a date. */
   from: string;
@@ -781,6 +811,16 @@ export interface ProgressData {
   snatchQualityImported: number;
   /** Sets per week per muscle group. */
   setsByGroup: { week: string; groups: Record<string, number> }[];
+  /**
+   * Every exercise worked in the window, split by where it was worked.
+   *
+   * A setup is one exercise on one machine at one gym. Loads are not
+   * comparable across those: 45 kg on a cable and 45 kg on a plate-loaded
+   * machine are different resistances wearing the same number, so pooling
+   * them would turn a change of equipment into progress. Nothing here is
+   * summed across setups for that reason.
+   */
+  hypertrophyDetail: ExerciseDetail[];
   /** Volume load per week, in kg. */
   volumeByWeek: WeekPoint[];
   /** Per variation over the whole window. Never pooled across variations. */
@@ -822,7 +862,7 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
     ? new Date(Date.parse(to) - days * 86400000).toISOString().slice(0, 10)
     : "1970-01-01";
 
-  const [snatchWeekly, snatchBlocks, sets, exercises, groups, entries, variations, skills] =
+  const [snatchWeekly, snatchBlocks, sets, exercises, groups, entries, variations, skills, gyms] =
     await Promise.all([
       safeRead<{ week_start: string; weight_kg: number; attempts: number; stood: number }[]>((c) =>
         c
@@ -853,11 +893,29 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
       // `sessions` is typed as an array by the client, which cannot know a
       // to-one embed returns an object; it is cast at the point of use, as
       // the rest of this file does.
-      safeRead<{ exercise_id: number; volume_load_kg: number | null; sessions: unknown }[]>((c) =>
+      // Drop sets are read too, and filtered where they do not belong, rather
+      // than excluded at the query. They are real work: leaving them out of
+      // the drill-down entirely would show an exercise session that never
+      // happened as you performed it.
+      safeRead<
+        {
+          exercise_id: number;
+          volume_load_kg: number | null;
+          is_drop: boolean;
+          load_kg: number | null;
+          reps: number | null;
+          sets_count: number;
+          rir: number | null;
+          machine_label: string | null;
+          side: BodySide;
+          sessions: unknown;
+        }[]
+      >((c) =>
         c
           .from("hypertrophy_sets")
-          .select("exercise_id, volume_load_kg, is_drop, sessions(session_date)")
-          .eq("is_drop", false),
+          .select(
+            "exercise_id, volume_load_kg, is_drop, load_kg, reps, sets_count, rir, machine_label, side, sessions(session_date, gym_id)",
+          ),
       ),
       safeRead<Exercise[]>((c) => c.from("exercises").select("*")),
       safeRead<MuscleGroup[]>((c) => c.from("muscle_groups").select("*").order("sort_order")),
@@ -879,6 +937,7 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
       ),
       safeRead<SkillVariation[]>((c) => c.from("skill_variations").select("*")),
       safeRead<Skill[]>((c) => c.from("skills").select("*")),
+      safeRead<Gym[]>((c) => c.from("gyms").select("id, name")),
     ]);
 
   // --- snatch: stand rate per week, per load -------------------------------
@@ -935,6 +994,9 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
   const groupName = new Map((groups.data ?? []).map((g) => [g.id, g.slug]));
   const perWeek = new Map<string, { groups: Record<string, number>; volume: number }>();
   for (const row of sets.data ?? []) {
+    // Drops were excluded at the query before this read widened; the filter
+    // moves here so the weekly set count and volume stay what they were.
+    if (row.is_drop) continue;
     const date = (row.sessions as unknown as { session_date: string } | null)?.session_date;
     if (!date || date < from || date > to) continue;
     const week = weekStartOf(date);
@@ -943,6 +1005,46 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
     entry.groups[slug] = (entry.groups[slug] ?? 0) + 1;
     entry.volume += Number(row.volume_load_kg ?? 0);
     perWeek.set(week, entry);
+  }
+
+  // --- hypertrophy: every exercise, split by where it was worked -----------
+  //
+  // The unit is the setup — exercise × machine × gym — because that is the
+  // only thing a load means the same on. Machine labels are free text, so
+  // they are matched on case and surrounding space only: "Cable" and "cable"
+  // are one setup, "cable" and "cable crossover" are two. Guessing harder
+  // than that would merge machines that are genuinely different, which is
+  // the error this split exists to prevent.
+  const exerciseName = new Map((exercises.data ?? []).map((e) => [e.id, e.name]));
+  const gymName = new Map((gyms.data ?? []).map((g) => [g.id, g.name]));
+  const detail = new Map<number, Map<string, Setup>>();
+  for (const row of sets.data ?? []) {
+    const session = row.sessions as unknown as {
+      session_date: string;
+      gym_id: number | null;
+    } | null;
+    const date = session?.session_date;
+    if (!date || date < from || date > to) continue;
+
+    const machine = row.machine_label?.trim() || null;
+    const gym = session.gym_id == null ? null : (gymName.get(session.gym_id) ?? null);
+    const key = `${machine?.toLowerCase() ?? ""}|${gym ?? ""}`;
+
+    const setups = detail.get(row.exercise_id) ?? new Map<string, Setup>();
+    const setup = setups.get(key) ?? { machine, gym, sets: 0, entries: [] };
+    setup.sets += row.is_drop ? 0 : row.sets_count;
+    setup.entries.push({
+      date,
+      load: row.load_kg == null ? null : Number(row.load_kg),
+      reps: row.reps,
+      setsCount: row.sets_count,
+      rir: row.rir,
+      volume: Number(row.volume_load_kg ?? 0),
+      isDrop: row.is_drop,
+      side: row.side,
+    });
+    setups.set(key, setup);
+    detail.set(row.exercise_id, setups);
   }
 
   // --- calisthenics: per variation, never pooled ---------------------------
@@ -1090,6 +1192,23 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
     setsByGroup: [...perWeek.entries()]
       .sort((a, b) => (a[0] < b[0] ? -1 : 1))
       .map(([week, v]) => ({ week, groups: v.groups })),
+    hypertrophyDetail: [...detail.entries()]
+      .map(([exerciseId, setups]) => {
+        const list = [...setups.values()].map((s) => ({
+          ...s,
+          // Newest first: the question asked of this screen is almost always
+          // about the last session against the one before it.
+          entries: [...s.entries].sort((a, b) => (a.date < b.date ? 1 : -1)),
+        }));
+        return {
+          exerciseId,
+          exercise: exerciseName.get(exerciseId) ?? "Exercise",
+          group: groupName.get(groupOf.get(exerciseId) ?? -1) ?? "unassigned",
+          sets: list.reduce((total, s) => total + s.sets, 0),
+          setups: list.sort((a, b) => b.sets - a.sets),
+        };
+      })
+      .sort((a, b) => b.sets - a.sets),
     volumeByWeek: [...perWeek.entries()]
       .sort((a, b) => (a[0] < b[0] ? -1 : 1))
       .map(([week, v]) => ({ week, value: v.volume })),

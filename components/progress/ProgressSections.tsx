@@ -1,3 +1,4 @@
+import { HypertrophyDrill } from "@/components/progress/HypertrophyDrill";
 import { QualityDots } from "@/components/progress/QualityDots";
 import { WeeklyBars } from "@/components/progress/WeeklyBars";
 import {
@@ -9,7 +10,7 @@ import {
   wsColour,
 } from "@/components/ui";
 import type { ProgressData } from "@/lib/queries";
-import type { MuscleRegion } from "@/lib/types";
+import type { MuscleGroup, MuscleRegion } from "@/lib/types";
 
 /**
  * What the training did, by week.
@@ -169,9 +170,11 @@ export function SnatchProgress({ data }: { data: ProgressData }) {
 export function HypertrophyProgress({
   data,
   regions,
+  muscleGroups,
 }: {
   data: ProgressData;
   regions: MuscleRegion[];
+  muscleGroups: MuscleGroup[];
 }) {
   const hue = wsColour("hypertrophy");
   const weeks = data.setsByGroup;
@@ -242,6 +245,14 @@ export function HypertrophyProgress({
             gained. Loads are not comparable across gyms or machines, so a rise here can be a
             change of equipment.
           </p>
+
+          {/* Where that caveat gets answered: the same totals, taken apart by
+              muscle and by the machine they were lifted on. */}
+          <HypertrophyDrill
+            regions={regions}
+            muscleGroups={muscleGroups}
+            detail={data.hypertrophyDetail}
+          />
         </div>
       )}
     </Card>

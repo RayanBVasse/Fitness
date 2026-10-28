@@ -121,7 +121,11 @@ export default async function ProgressPage({
       </div>
 
       <SnatchProgress data={progress} />
-      <HypertrophyProgress data={progress} regions={reference.muscleRegions} />
+      <HypertrophyProgress
+        data={progress}
+        regions={reference.muscleRegions}
+        muscleGroups={reference.muscleGroups}
+      />
       <CalisthenicsProgress data={progress} />
 
       {objective ? (
