@@ -1,5 +1,12 @@
 import { WeeklyBars } from "@/components/progress/WeeklyBars";
-import { Card, InsufficientData, SectionTitle, mgColour, wsColour } from "@/components/ui";
+import {
+  Card,
+  InsufficientData,
+  MIN_ATTEMPTS_FOR_RATE,
+  SectionTitle,
+  mgColour,
+  wsColour,
+} from "@/components/ui";
 import type { ProgressData } from "@/lib/queries";
 import type { MuscleRegion } from "@/lib/types";
 
@@ -16,7 +23,12 @@ import type { MuscleRegion } from "@/lib/types";
  * volume and the outcome in one mark, neither implying the other.
  */
 
-const MIN_ATTEMPTS_FOR_RATE = 8;
+/** "1 attempt" / "12 attempts" / "no attempts". Null is not zero elsewhere;
+ *  here the count is derived from rows, so zero really is none. */
+function plural(n: number, noun: string): string {
+  if (n === 0) return `no ${noun}s`;
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
 
 /**
  * Which hue family each muscle belongs to. The palette is built family-first
@@ -50,7 +62,9 @@ export function SnatchProgress({ data }: { data: ProgressData }) {
         boxShadow: `inset 0 3px 0 ${hue}`,
       }}
     >
-      <SectionTitle tone={hue}>Snatch</SectionTitle>
+      <SectionTitle tone={hue} aside={plural(data.counts.snatchAttempts, "attempt")}>
+        Snatch
+      </SectionTitle>
 
       {loads.length === 0 ? (
         <InsufficientData reason="No substantiated full lifts in this window. A block counts only when it recorded both attempts and stands." />
@@ -152,7 +166,9 @@ export function HypertrophyProgress({
         boxShadow: `inset 0 3px 0 ${hue}`,
       }}
     >
-      <SectionTitle tone={hue}>Hypertrophy</SectionTitle>
+      <SectionTitle tone={hue} aside={plural(data.counts.hypertrophySets, "set")}>
+        Hypertrophy
+      </SectionTitle>
 
       {weeks.length === 0 ? (
         <InsufficientData reason="No sets logged in this window." />
@@ -202,7 +218,9 @@ export function CalisthenicsProgress({ data }: { data: ProgressData }) {
         boxShadow: `inset 0 3px 0 ${hue}`,
       }}
     >
-      <SectionTitle tone={hue}>Calisthenics</SectionTitle>
+      <SectionTitle tone={hue} aside={plural(data.counts.calisthenicsAttempts, "attempt")}>
+        Calisthenics
+      </SectionTitle>
 
       {skills.length === 0 ? (
         <InsufficientData reason="No skill attempts in this window." />

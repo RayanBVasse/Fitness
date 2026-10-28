@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getProgress, getReferenceData, getSnatchSuccessBySource } from "@/lib/queries";
 import { SetupNotice } from "@/components/SetupNotice";
-import { Card, InsufficientData, SectionTitle } from "@/components/ui";
+import { Card, InsufficientData, MIN_ATTEMPTS_FOR_RATE, SectionTitle } from "@/components/ui";
 import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
 import { londonTime, longDate } from "@/lib/time";
 import {
@@ -20,26 +20,36 @@ export const dynamic = "force-dynamic";
  * Nothing here is stored: every figure is computed from the rows, so it cannot
  * drift from the data the way a frozen baseline did.
  */
-const PERIODS: { label: string; weeks: number | null }[] = [
-  { label: "4 weeks", weeks: 4 },
-  { label: "8 weeks", weeks: 8 },
-  { label: "12 weeks", weeks: 12 },
-  { label: "All", weeks: null },
+/**
+ * Months are 183 and 365 days rather than calendar months. A window is a
+ * length of time to look back over, not a position in the calendar, and
+ * "6 months" meaning a different number of days depending on when you ask
+ * would make two readings of the same screen incomparable.
+ */
+const PERIODS: { slug: string; label: string; days: number | null }[] = [
+  { slug: "7d", label: "7 days", days: 7 },
+  { slug: "30d", label: "30 days", days: 30 },
+  { slug: "90d", label: "90 days", days: 90 },
+  { slug: "6m", label: "6 months", days: 183 },
+  { slug: "12m", label: "12 months", days: 365 },
+  { slug: "all", label: "All", days: null },
 ];
+
+/** Below this, a chart over weeks is a handful of bars, not a trend. */
+const MIN_WEEKS_FOR_TREND = 3;
 
 export default async function ProgressPage({
   searchParams,
 }: {
-  searchParams: Promise<{ weeks?: string }>;
+  searchParams: Promise<{ period?: string }>;
 }) {
-  const { weeks: weeksParam } = await searchParams;
-  const period =
-    PERIODS.find((p) => String(p.weeks ?? "all") === weeksParam) ?? PERIODS[1];
+  const { period: periodParam } = await searchParams;
+  const period = PERIODS.find((p) => p.slug === periodParam) ?? PERIODS[1];
 
   const [{ data, error }, reference, progress] = await Promise.all([
     getSnatchSuccessBySource(),
     getReferenceData(),
-    getProgress(period.weeks),
+    getProgress(period.days),
   ]);
   if (error) return <SetupNotice error={error} />;
 
@@ -49,6 +59,7 @@ export default async function ProgressPage({
   const at = (weight: number, source: "imported" | "logged") =>
     rows.find((r) => Number(r.weight_kg) === weight && r.source === source) ?? null;
 
+  const counts = progress.counts;
   const primary = objective?.primary_load_kg ?? 50;
   const primaryImported = at(primary, "imported");
   const primaryLogged = at(primary, "logged");
@@ -62,16 +73,39 @@ export default async function ProgressPage({
         </p>
       </header>
 
+      {/* What the window actually holds, before any chart is read. "All" is
+          named by its earliest record rather than by 1970, which is where the
+          query starts and not where the training does. */}
+      <p className="text-[11px] leading-snug text-text-faint">
+        {counts.daysWithRecords === 0 ? (
+          <>Nothing recorded in the last {period.label.toLowerCase()}.</>
+        ) : (
+          <>
+            {period.days === null && progress.coveredFrom
+              ? `Everything since ${longDate(progress.coveredFrom)}`
+              : `The last ${period.label.toLowerCase()}`}
+            {" · "}
+            <span className="tnum">{counts.daysWithRecords}</span> day
+            {counts.daysWithRecords === 1 ? "" : "s"} with records across{" "}
+            <span className="tnum">{counts.weeksWithRecords}</span> week
+            {counts.weeksWithRecords === 1 ? "" : "s"}.
+            {counts.weeksWithRecords < MIN_WEEKS_FOR_TREND
+              ? " Too few weeks for any of the charts below to show a trend; read them as what happened, not as a direction."
+              : ""}
+          </>
+        )}
+      </p>
+
       {/* The window every chart below is drawn over. A link rather than a
           control, so the page stays server-rendered and a period is a place
           you can return to. */}
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Period">
         {PERIODS.map((p) => {
-          const on = p.weeks === period.weeks;
+          const on = p.slug === period.slug;
           return (
             <Link
-              key={p.label}
-              href={`/progress?weeks=${p.weeks ?? "all"}`}
+              key={p.slug}
+              href={`/progress?period=${p.slug}`}
               aria-current={on ? "true" : undefined}
               className="min-h-[38px] rounded-full border px-3 text-xs font-semibold leading-[34px]"
               style={{
@@ -98,11 +132,13 @@ export default async function ProgressPage({
             <Figure
               label="Imported"
               value={primaryImported?.stand_rate_pct}
+              n={primaryImported?.attempts}
               hint={primaryImported ? `${primaryImported.attempts} attempts` : "no history"}
             />
             <Figure
               label="Logged since"
               value={primaryLogged?.stand_rate_pct}
+              n={primaryLogged?.attempts}
               hint={primaryLogged ? `${primaryLogged.attempts} attempts` : "none yet"}
             />
             <Figure label="Target" value={objective.primary_target_stand_rate_pct} hint="stand rate" />
@@ -137,31 +173,20 @@ export default async function ProgressPage({
                   <tr key={weight} className="tnum">
                     <td className="py-2 font-semibold">{weight} kg</td>
                     <td className="py-2 text-right text-text-dim">
-                      {imported ? (
-                        <>
-                          {imported.stand_rate_pct}%
-                          <span className="ml-1 text-[10px] text-text-faint">
-                            {imported.stood}/{imported.attempts}
-                          </span>
-                        </>
-                      ) : (
-                        "—"
-                      )}
+                      <Rate
+                        pct={imported?.stand_rate_pct}
+                        stood={imported?.stood}
+                        n={imported?.attempts}
+                      />
                     </td>
                     <td className="py-2 text-right font-semibold">
-                      {logged ? (
-                        <>
-                          {logged.stand_rate_pct}%
-                          <span className="ml-1 text-[10px] font-normal text-text-faint">
-                            {logged.stood}/{logged.attempts}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-text-faint">—</span>
-                      )}
+                      <Rate pct={logged?.stand_rate_pct} stood={logged?.stood} n={logged?.attempts} />
                     </td>
                     <td className="py-2 text-right" style={{ color: "var(--caught)" }}>
-                      {receive?.receive_rate_pct != null ? `${receive.receive_rate_pct}%` : "—"}
+                      {receive && (receive.attempts ?? 0) >= MIN_ATTEMPTS_FOR_RATE &&
+                      receive.receive_rate_pct != null
+                        ? `${receive.receive_rate_pct}%`
+                        : "—"}
                     </td>
                   </tr>
                 );
@@ -171,7 +196,9 @@ export default async function ProgressPage({
         )}
         <p className="mt-3 text-[11px] leading-snug text-text-faint">
           Receiving the bar and standing it up are different capabilities. A high receive rate
-          with a low stand rate means the catch is no longer the limiter.
+          with a low stand rate means the catch is no longer the limiter. Percentages appear
+          only from {MIN_ATTEMPTS_FOR_RATE} attempts; below that the counts are shown and the
+          rate is not, because one lift either way would move it by twenty points.
         </p>
       </Card>
 
@@ -200,17 +227,54 @@ export default async function ProgressPage({
 function Figure({
   label,
   value,
+  n,
   hint,
 }: {
   label: string;
   value: number | null | undefined;
+  /** Attempts behind the rate. Omitted for the target, which has no n. */
+  n?: number | null;
   hint: string;
 }) {
+  const enough = n === undefined || (n ?? 0) >= MIN_ATTEMPTS_FOR_RATE;
   return (
     <div>
       <div className="text-[11px] uppercase tracking-wide text-text-faint">{label}</div>
-      <div className="tnum text-xl font-semibold">{value == null ? "—" : `${value}%`}</div>
-      <div className="text-[10px] text-text-faint">{hint}</div>
+      <div className="tnum text-xl font-semibold">
+        {value == null || !enough ? "—" : `${value}%`}
+      </div>
+      <div className="text-[10px] text-text-faint">
+        {value != null && !enough ? `${hint}, too few for a rate` : hint}
+      </div>
     </div>
+  );
+}
+
+/**
+ * A stand rate and the attempts behind it, or the attempts alone.
+ *
+ * The counts are always shown; the percentage only once there are enough
+ * attempts for it to mean anything. A rate that is shown sometimes and
+ * withheld other times is more informative than one that is always shown,
+ * because the withholding is itself a fact about the record.
+ */
+function Rate({
+  pct,
+  stood,
+  n,
+}: {
+  pct: number | null | undefined;
+  stood: number | null | undefined;
+  n: number | null | undefined;
+}) {
+  if (!n) return <span className="text-text-faint">—</span>;
+  const enough = n >= MIN_ATTEMPTS_FOR_RATE;
+  return (
+    <>
+      {enough && pct != null ? `${pct}%` : <span className="text-text-faint">—</span>}
+      <span className="ml-1 text-[10px] font-normal text-text-faint">
+        {stood ?? "?"}/{n}
+      </span>
+    </>
   );
 }

@@ -63,6 +63,10 @@ export function WeeklyBars({ title, hue, bars, unit, partLabel, empty }: Props) 
   const peak = bars.reduce((best, b, i) => (b.value > bars[best].value ? i : best), 0);
   const width = 100 / bars.length;
   const shown = selected !== null ? bars[selected] : null;
+  // A short window can leave one bucket. "Peak" across a single week is the
+  // week, and a first and last label that are the same date reads as a range
+  // that is not one — so one bar says what it is and names itself once.
+  const single = bars.length === 1;
 
   return (
     <div>
@@ -75,7 +79,9 @@ export function WeeklyBars({ title, hue, bars, unit, partLabel, empty }: Props) 
                   ? ` · ${format(shown.part)} ${partLabel}`
                   : ""
               }`
-            : `peak ${format(bars[peak].value)}`}
+            : single
+              ? format(bars[0].value)
+              : `peak ${format(bars[peak].value)}`}
         </span>
       </ChartTitle>
 
@@ -129,9 +135,13 @@ export function WeeklyBars({ title, hue, bars, unit, partLabel, empty }: Props) 
         <line x1="0" y1={HEIGHT} x2="100" y2={HEIGHT} stroke="var(--border)" strokeWidth="0.5" />
       </svg>
 
-      <div className="flex justify-between text-[10px] text-text-dim">
-        <span className="tnum">{shortWeek(bars[0].week)}</span>
-        <span className="tnum">{shortWeek(bars[bars.length - 1].week)}</span>
+      <div
+        className={`flex text-[10px] text-text-dim ${single ? "justify-center" : "justify-between"}`}
+      >
+        <span className="tnum">
+          {single ? `week of ${shortWeek(bars[0].week)}` : shortWeek(bars[0].week)}
+        </span>
+        {single ? null : <span className="tnum">{shortWeek(bars[bars.length - 1].week)}</span>}
       </div>
     </div>
   );

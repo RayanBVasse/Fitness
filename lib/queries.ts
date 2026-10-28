@@ -726,11 +726,35 @@ export interface WeekPoint {
   value: number;
 }
 
+/**
+ * How much there is behind a window's figures.
+ *
+ * Carried beside every panel because the same chart drawn over seven days and
+ * over a year looks identical and means something entirely different. A rate
+ * from two attempts and one from two hundred are both "a rate"; only the n
+ * says which you are reading.
+ */
+export interface ProgressCounts {
+  /** Days with any record at all. Not days trained: a day may hold a note. */
+  daysWithRecords: number;
+  /** Weekly buckets that hold something. Below three, nothing is a trend. */
+  weeksWithRecords: number;
+  snatchBlocks: number;
+  snatchAttempts: number;
+  hypertrophySets: number;
+  calisthenicsEntries: number;
+  calisthenicsAttempts: number;
+}
+
 export interface ProgressData {
-  /** The window actually covered, which may be shorter than asked for. */
+  /** The window asked for. `from` is 1970 for "all", which is not a date. */
   from: string;
   to: string;
-  weeks: number | null;
+  /** The length of the window in days, null for all of it. */
+  days: number | null;
+  /** The earliest record actually found, so "all" can name a real start. */
+  coveredFrom: string | null;
+  counts: ProgressCounts;
   /** Stand rate per week at each load, substantiated full lifts only. */
   snatchByLoad: { load_kg: number; points: { week: string; attempts: number; stood: number }[] }[];
   /** Bar lifted per week, working and warm-up kept apart. */
@@ -769,10 +793,13 @@ export interface ProgressData {
  * Weeks are ISO weeks starting Monday, matching fitness.week_start, so a week
  * here and a week in the database are the same week.
  */
-export async function getProgress(weeks: number | null): Promise<ProgressData> {
+export async function getProgress(days: number | null): Promise<ProgressData> {
   const to = londonToday();
-  const from = weeks
-    ? new Date(Date.parse(to) - weeks * 7 * 86400000).toISOString().slice(0, 10)
+  // Days rather than weeks, because the windows worth looking at are not all
+  // whole weeks: a week of training and six months of it are both questions
+  // worth asking, and 26.1 weeks is not a period anybody thinks in.
+  const from = days
+    ? new Date(Date.parse(to) - days * 86400000).toISOString().slice(0, 10)
     : "1970-01-01";
 
   const [snatchWeekly, snatchBlocks, sets, exercises, groups, entries, variations, skills] =
@@ -912,6 +939,46 @@ export async function getProgress(weeks: number | null): Promise<ProgressData> {
     perVariation.set(entry.skill_variation_id, acc);
   }
 
+  // --- how much is behind all of it ----------------------------------------
+  //
+  // Derived from the aggregates above rather than counted separately, so the
+  // n beside a chart is the n of that chart. A second pass over the rows
+  // could disagree with what was drawn, and the whole point of an n is that
+  // it describes the figure it sits next to.
+  const dates = new Set<string>();
+  for (const b of snatchBlocks.data ?? []) dates.add(b.session_date);
+  for (const row of sets.data ?? []) {
+    const date = (row.sessions as unknown as { session_date: string } | null)?.session_date;
+    if (date && date >= from && date <= to) dates.add(date);
+  }
+  for (const e of inWindow) {
+    const date = (e.sessions as unknown as { session_date: string } | null)?.session_date;
+    if (date) dates.add(date);
+  }
+
+  const snatchAttemptTotal = [...byLoad.values()]
+    .flat()
+    .reduce((total, point) => total + point.attempts, 0);
+  const hypertrophySetTotal = [...perWeek.values()].reduce(
+    (total, week) => total + Object.values(week.groups).reduce((a, b) => a + b, 0),
+    0,
+  );
+  const skillAttemptTotal = [...perVariation.values()].reduce((t, v) => t + v.attempts, 0);
+
+  const counts: ProgressCounts = {
+    daysWithRecords: dates.size,
+    weeksWithRecords: new Set([
+      ...tonnage.keys(),
+      ...perWeek.keys(),
+      ...[...byLoad.values()].flat().map((p) => p.week),
+    ]).size,
+    snatchBlocks: (snatchBlocks.data ?? []).length,
+    snatchAttempts: snatchAttemptTotal,
+    hypertrophySets: hypertrophySetTotal,
+    calisthenicsEntries: inWindow.length,
+    calisthenicsAttempts: skillAttemptTotal,
+  };
+
   // Weekly reviews are listed by week, not by what was trained: a week with
   // a review and no training is still a week someone wrote about, and a week
   // with training and no review should show its empty slot.
@@ -938,7 +1005,9 @@ export async function getProgress(weeks: number | null): Promise<ProgressData> {
   return {
     from,
     to,
-    weeks,
+    days,
+    coveredFrom: dates.size > 0 ? [...dates].sort()[0] : null,
+    counts,
     snatchByLoad: [...byLoad.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([load_kg, points]) => ({ load_kg, points })),

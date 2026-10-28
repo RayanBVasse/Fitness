@@ -132,6 +132,16 @@ export function Empty({ children }: { children: ReactNode }) {
 }
 
 /**
+ * The fewest attempts a percentage may be drawn from.
+ *
+ * One rule, in one place, because a rate suppressed on one screen and shown
+ * on another is worse than no rule at all. Below this, the counts are given
+ * and the percentage is not: at five attempts a single lift moves the figure
+ * twenty points, which is a number about luck rather than about standing.
+ */
+export const MIN_ATTEMPTS_FOR_RATE = 8;
+
+/**
  * Shown wherever a figure cannot be computed. The rule across this app is to
  * say so rather than to infer a number from partial counts.
  */
