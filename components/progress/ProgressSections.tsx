@@ -1,3 +1,4 @@
+import { QualityDots } from "@/components/progress/QualityDots";
 import { WeeklyBars } from "@/components/progress/WeeklyBars";
 import {
   Card,
@@ -48,6 +49,11 @@ export function SnatchProgress({ data }: { data: ProgressData }) {
   const loads = data.snatchByLoad
     .filter((l) => l.points.reduce((t, p) => t + p.attempts, 0) >= 3)
     .slice(-4);
+
+  // Loads that have at least one rating. A load worked all month and never
+  // rated gets no chart rather than an empty one: the absence belongs in the
+  // footnote, not in a row of blank axes.
+  const rated = data.snatchQuality.filter((q) => q.rated > 0);
 
   const totals = loads.map((l) => ({
     load: l.load_kg,
@@ -119,6 +125,41 @@ export function SnatchProgress({ data }: { data: ProgressData }) {
             flagged as one. Pulls and bottom stands carry tonnage but never appear in a stand
             count.
           </p>
+
+          {/* Quality against load: whether the lighter lifts are becoming
+              smooth while the heavy ones stay variable. This is the one
+              reading that shows development without a new best lift, so it
+              is its own section rather than a note under the rates. */}
+          {rated.length > 0 ? (
+            <div className="space-y-3 border-t border-border pt-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-text-dim">
+                Technical quality by load
+              </p>
+              {rated.map((q) => (
+                <QualityDots
+                  key={q.load_kg}
+                  title={`${q.load_kg} kg`}
+                  hue={hue}
+                  weeks={q.points}
+                  blocks={q.blocks}
+                  rated={q.rated}
+                />
+              ))}
+              <p className="text-[11px] leading-snug text-text-dim">
+                Every rating, never averaged: the middle of three opinions is not a
+                measurement. Read the dots gathering rather than rising — 7, 7, 7 and 4, 7, 10
+                share an average and only one of them is consolidation. Full lifts you logged
+                yourself; warm-ups and other variations are not mixed in.
+                {data.snatchQualityImported > 0
+                  ? ` ${data.snatchQualityImported} rated block${
+                      data.snatchQualityImported === 1 ? "" : "s"
+                    } from the imported reconstruction ${
+                      data.snatchQualityImported === 1 ? "is" : "are"
+                    } left out.`
+                  : ""}
+              </p>
+            </div>
+          ) : null}
         </div>
       )}
     </Card>

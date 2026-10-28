@@ -759,6 +759,26 @@ export interface ProgressData {
   snatchByLoad: { load_kg: number; points: { week: string; attempts: number; stood: number }[] }[];
   /** Bar lifted per week, working and warm-up kept apart. */
   snatchTonnage: { week: string; working: number; warmup: number }[];
+  /**
+   * Technical quality per load, as the ratings themselves.
+   *
+   * Every rated block is kept as its own number rather than reduced to a mean
+   * or a median. Quality is a 1–10 judgement recorded two or three times a
+   * week at a given load; the middle of three opinions is not a measurement,
+   * and a line through it reads as a trend the data cannot carry. The spread
+   * IS the finding — whether 45 kg is becoming consistently smooth is a
+   * question about the spread closing, which an average hides.
+   */
+  snatchQuality: {
+    load_kg: number;
+    /** Logged full lifts at this load in the window. */
+    blocks: number;
+    /** How many of them carry a rating. The rest are not zeros. */
+    rated: number;
+    points: { week: string; qualities: number[] }[];
+  }[];
+  /** Rated blocks left out as reconstruction, so the omission can be named. */
+  snatchQualityImported: number;
   /** Sets per week per muscle group. */
   setsByGroup: { week: string; groups: Record<string, number> }[];
   /** Volume load per week, in kg. */
@@ -811,13 +831,24 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
           .gte("week_start", from)
           .order("week_start"),
       ),
-      safeRead<{ session_date: string; weight_kg: number; attempts: number; is_warmup: boolean }[]>(
-        (c) =>
-          c
-            .from("v_snatch_blocks")
-            .select("session_date, weight_kg, attempts, is_warmup")
-            .gte("session_date", from)
-            .lte("session_date", to),
+      safeRead<
+        {
+          session_date: string;
+          weight_kg: number;
+          attempts: number;
+          is_warmup: boolean;
+          quality_10: number | null;
+          counts_as_full_lift: boolean;
+          provenance: Provenance;
+        }[]
+      >((c) =>
+        c
+          .from("v_snatch_blocks")
+          .select(
+            "session_date, weight_kg, attempts, is_warmup, quality_10, counts_as_full_lift, provenance",
+          )
+          .gte("session_date", from)
+          .lte("session_date", to),
       ),
       // `sessions` is typed as an array by the client, which cannot know a
       // to-one embed returns an object; it is cast at the point of use, as
@@ -868,6 +899,33 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
     if (b.is_warmup) entry.warmup += kg;
     else entry.working += kg;
     tonnage.set(week, entry);
+  }
+
+  // --- snatch: technical quality per load ----------------------------------
+  //
+  // Full lifts only: a power snatch and a full snatch at 45 kg are different
+  // movements that share a weight, and one quality figure across them would
+  // describe neither. Logged only: a rating reconstructed from a sentence in
+  // August and one tapped after the lift are not the same claim, and this app
+  // never averages the two. Warm-ups are out — a warm-up is performed
+  // differently, and its loads would stretch the light end of every chart.
+  const quality = new Map<number, Map<string, number[]>>();
+  const qualityBlocks = new Map<number, number>();
+  let snatchQualityImported = 0;
+  for (const b of snatchBlocks.data ?? []) {
+    if (!b.counts_as_full_lift || b.is_warmup) continue;
+    if (b.provenance !== "logged") {
+      if (b.quality_10 != null) snatchQualityImported += 1;
+      continue;
+    }
+    const load = Number(b.weight_kg);
+    if (!Number.isFinite(load)) continue;
+    qualityBlocks.set(load, (qualityBlocks.get(load) ?? 0) + 1);
+    if (b.quality_10 == null) continue;
+    const weeks = quality.get(load) ?? new Map<string, number[]>();
+    const week = weekStartOf(b.session_date);
+    weeks.set(week, [...(weeks.get(week) ?? []), Number(b.quality_10)]);
+    quality.set(load, weeks);
   }
 
   // --- hypertrophy: sets and volume per week -------------------------------
@@ -1018,6 +1076,17 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
     snatchTonnage: [...tonnage.entries()]
       .sort((a, b) => (a[0] < b[0] ? -1 : 1))
       .map(([week, v]) => ({ week, ...v })),
+    snatchQuality: [...quality.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([load_kg, weeks]) => ({
+        load_kg,
+        blocks: qualityBlocks.get(load_kg) ?? 0,
+        rated: [...weeks.values()].reduce((total, list) => total + list.length, 0),
+        points: [...weeks.entries()]
+          .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+          .map(([week, qualities]) => ({ week, qualities })),
+      })),
+    snatchQualityImported,
     setsByGroup: [...perWeek.entries()]
       .sort((a, b) => (a[0] < b[0] ? -1 : 1))
       .map(([week, v]) => ({ week, groups: v.groups })),
