@@ -62,7 +62,7 @@ export function SnatchProgress({ data }: { data: ProgressData }) {
                 title={`${l.load_kg} kg`}
                 hue={hue}
                 partLabel="stood"
-                format={(v) => `${Math.round(v)}`}
+                unit="count"
                 bars={l.points.map((p) => ({
                   week: p.week,
                   value: p.attempts,
@@ -93,7 +93,7 @@ export function SnatchProgress({ data }: { data: ProgressData }) {
             title="Bar lifted"
             hue={hue}
             partLabel="working"
-            format={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}t` : `${Math.round(v)} kg`)}
+            unit="kg"
             bars={data.snatchTonnage.map((t) => ({
               week: t.week,
               value: t.working + t.warmup,
@@ -161,7 +161,7 @@ export function HypertrophyProgress({
           <WeeklyBars
             title="Volume load"
             hue={hue}
-            format={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}t` : `${Math.round(v)} kg`)}
+            unit="kg"
             bars={data.volumeByWeek}
           />
 
@@ -174,7 +174,7 @@ export function HypertrophyProgress({
                 key={region.slug}
                 title={region.name}
                 hue={regionHue}
-                format={(v) => `${v} set${v === 1 ? "" : "s"}`}
+                unit="sets"
                 bars={bars}
               />
             ))}

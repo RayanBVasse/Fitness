@@ -24,12 +24,18 @@ export interface WeekBar {
   part?: number;
 }
 
+/**
+ * How to read the numbers. A name rather than a formatter function: this is a
+ * client component, and a function cannot cross the boundary from the server
+ * component that renders it — passing one makes the whole page fail to render.
+ */
+export type Unit = "count" | "kg" | "sets";
+
 type Props = {
   title: string;
   hue: string;
   bars: WeekBar[];
-  /** What one unit is, for the tooltip and the peak label. */
-  format: (value: number) => string;
+  unit: Unit;
   /** What `part` means, named in the tooltip rather than left to colour. */
   partLabel?: string;
   /** Said instead of an empty chart. Zero bars is not zero training. */
@@ -39,7 +45,8 @@ type Props = {
 const HEIGHT = 56;
 const GAP = 2;
 
-export function WeeklyBars({ title, hue, bars, format, partLabel, empty }: Props) {
+export function WeeklyBars({ title, hue, bars, unit, partLabel, empty }: Props) {
+  const format = (value: number) => formatUnit(value, unit);
   const [selected, setSelected] = useState<number | null>(null);
   const id = useId();
 
@@ -139,6 +146,16 @@ function ChartTitle({ hue, children }: { hue: string; children: React.ReactNode 
       </span>
     </div>
   );
+}
+
+function formatUnit(value: number, unit: Unit): string {
+  if (unit === "kg") {
+    return value >= 1000 ? `${(value / 1000).toFixed(1)}t` : `${Math.round(value)} kg`;
+  }
+  if (unit === "sets") {
+    return `${value} set${value === 1 ? "" : "s"}`;
+  }
+  return String(Math.round(value));
 }
 
 const MONTHS = [
