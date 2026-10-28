@@ -262,6 +262,9 @@ export function HypertrophyProgress({
 export function CalisthenicsProgress({ data }: { data: ProgressData }) {
   const hue = wsColour("calisthenics");
   const skills = data.skills.filter((s) => s.attempts > 0);
+  // More than one week of records: enough for the shape of it to mean
+  // something. The rest keep their summary line below.
+  const tracked = skills.filter((s) => s.weeks.length > 1);
 
   return (
     <Card
@@ -278,10 +281,55 @@ export function CalisthenicsProgress({ data }: { data: ProgressData }) {
         <InsufficientData reason="No skill attempts in this window." />
       ) : (
         <>
+          {/* Consistency is the measurement, so the ones with more than one
+              week get a chart and the rest stay a line. A variation worked
+              once has a result, not a trend, and drawing it as one would
+              make a single good day look like a direction. */}
+          {tracked.length > 0 ? (
+            <div className="mb-3 space-y-4">
+              {tracked.map((s) => (
+                <div key={`${s.variation}-${s.assistance ?? ""}`}>
+                  <WeeklyBars
+                    title={s.assistance ? `${s.variation} · ${s.assistance}` : s.variation}
+                    hue={hue}
+                    partLabel="successful"
+                    unit="count"
+                    bars={s.weeks.map((w) => ({
+                      week: w.week,
+                      value: w.attempts,
+                      part: w.successes,
+                    }))}
+                  />
+                  {s.holdWeeks.length > 1 ? (
+                    <div className="mt-2">
+                      <WeeklyBars
+                        title={`Longest hold${
+                          s.minHoldSeconds == null ? "" : ` · bar ${s.minHoldSeconds}s`
+                        }`}
+                        hue={hue}
+                        unit="sec"
+                        bars={s.holdWeeks.map((w) => ({ week: w.week, value: w.seconds }))}
+                      />
+                      <p className="mt-0.5 text-[10px] leading-snug text-text-faint">
+                        Only weeks that timed a hold. A week of attempts nobody timed is not a
+                        week of zero seconds.
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+              <p className="text-[11px] leading-snug text-text-dim">
+                The filled part is the successful attempts. Repeatability is the point: one
+                spectacular attempt in a week of twelve is a different report from nine out of
+                twelve, and a success rate alone would not tell them apart.
+              </p>
+            </div>
+          ) : null}
+
           <ul className="space-y-1.5">
             {skills.map((s) => (
               <li
-                key={s.variation}
+                key={`${s.variation}-${s.assistance ?? ""}`}
                 className="flex items-baseline gap-2 rounded-[var(--radius)] px-2 py-1.5"
                 style={{ background: `color-mix(in oklab, ${hue} 6%, var(--surface-2))` }}
               >
@@ -290,6 +338,7 @@ export function CalisthenicsProgress({ data }: { data: ProgressData }) {
                   <span className="text-[10px] text-text-dim">
                     {s.skill}
                     {s.difficulty != null ? ` · level ${s.difficulty}` : ""}
+                    {s.assistance ? ` · ${s.assistance}` : ""}
                     {s.basis !== "attempt" ? " · from block totals" : ""}
                   </span>
                 </span>

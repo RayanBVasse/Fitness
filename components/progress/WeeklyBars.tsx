@@ -29,7 +29,7 @@ export interface WeekBar {
  * client component, and a function cannot cross the boundary from the server
  * component that renders it — passing one makes the whole page fail to render.
  */
-export type Unit = "count" | "kg" | "sets";
+export type Unit = "count" | "kg" | "sets" | "sec";
 
 type Props = {
   title: string;
@@ -72,7 +72,9 @@ export function WeeklyBars({ title, hue, bars, unit, partLabel, empty }: Props) 
     <div>
       <ChartTitle hue={hue}>
         {title}
-        <span className="ml-auto text-[11px] font-normal text-text-dim">
+        {/* shrink-0 and nowrap: a long series name wraps, and without these
+            the summary wraps with it and splits "peak 3" across two lines. */}
+        <span className="ml-auto shrink-0 whitespace-nowrap text-[11px] font-normal text-text-dim">
           {shown
             ? `${shortWeek(shown.week)} · ${format(shown.value)}${
                 shown.part !== undefined && partLabel
@@ -164,6 +166,11 @@ function formatUnit(value: number, unit: Unit): string {
   }
   if (unit === "sets") {
     return `${value} set${value === 1 ? "" : "s"}`;
+  }
+  if (unit === "sec") {
+    // Halves survive: a 7.5 s hold is a real reading off a stopwatch, and
+    // rounding it to 8 would quietly add half a second to a personal best.
+    return `${Math.round(value * 2) / 2}s`;
   }
   return String(Math.round(value));
 }

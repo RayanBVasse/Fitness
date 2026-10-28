@@ -776,6 +776,42 @@ export interface ExerciseDetail {
   setups: Setup[];
 }
 
+/**
+ * One skill variation over the window, week by week.
+ *
+ * Consistency is the measurement here, not the best attempt. One spectacular
+ * floating tuck in August says less than nine out of twelve across October,
+ * so the weekly attempts carry their successes inside them: the volume and
+ * the outcome in one mark, neither implying the other.
+ *
+ * Split by assistance wherever a variation was worked with more than one. A
+ * banded attempt and an unassisted one are different capabilities sharing a
+ * name — the same reason loads are never pooled across machines — and a rate
+ * across both would describe neither.
+ */
+export interface SkillSeries {
+  variation: string;
+  skill: string;
+  difficulty: number | null;
+  /** The duration this variation's holds are measured against, if it is one. */
+  minHoldSeconds: number | null;
+  /** Named only where the same variation was worked with more than one. */
+  assistance: string | null;
+  attempts: number;
+  successes: number;
+  bestHoldSeconds: number | null;
+  entries: number;
+  basis: "attempt" | "mixed" | "summary";
+  /** Weeks with something recorded. A week absent is a week absent. */
+  weeks: { week: string; attempts: number; successes: number }[];
+  /**
+   * Longest hold per week, for the weeks that recorded one. Separate from
+   * `weeks` on purpose: a week of attempts nobody timed is not a week of
+   * zero-second holds, and plotting it as one would invent a collapse.
+   */
+  holdWeeks: { week: string; seconds: number }[];
+}
+
 export interface ProgressData {
   /** The window asked for. `from` is 1970 for "all", which is not a date. */
   from: string;
@@ -824,16 +860,7 @@ export interface ProgressData {
   /** Volume load per week, in kg. */
   volumeByWeek: WeekPoint[];
   /** Per variation over the whole window. Never pooled across variations. */
-  skills: {
-    variation: string;
-    skill: string;
-    difficulty: number | null;
-    attempts: number;
-    successes: number;
-    bestHoldSeconds: number | null;
-    entries: number;
-    basis: "attempt" | "mixed" | "summary";
-  }[];
+  skills: SkillSeries[];
   /**
    * Weekly coach reviews touching this window, newest first, plus an empty
    * slot for the current week so there is always somewhere to paste one.
@@ -862,8 +889,10 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
     ? new Date(Date.parse(to) - days * 86400000).toISOString().slice(0, 10)
     : "1970-01-01";
 
-  const [snatchWeekly, snatchBlocks, sets, exercises, groups, entries, variations, skills, gyms] =
-    await Promise.all([
+  const [
+    snatchWeekly, snatchBlocks, sets, exercises, groups, entries, variations, skills, gyms,
+    assistanceTypes,
+  ] = await Promise.all([
       safeRead<{ week_start: string; weight_kg: number; attempts: number; stood: number }[]>((c) =>
         c
           .from("v_snatch_weekly")
@@ -926,18 +955,20 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
           attempts: number | null;
           successful_attempts: number | null;
           best_hold_seconds: number | null;
+          assistance_id: number | null;
           sessions: unknown;
         }[]
       >((c) =>
         c
           .from("calisthenics_entries")
           .select(
-            "id, skill_variation_id, attempts, successful_attempts, best_hold_seconds, sessions(session_date)",
+            "id, skill_variation_id, attempts, successful_attempts, best_hold_seconds, assistance_id, sessions(session_date)",
           ),
       ),
       safeRead<SkillVariation[]>((c) => c.from("skill_variations").select("*")),
       safeRead<Skill[]>((c) => c.from("skills").select("*")),
       safeRead<Gym[]>((c) => c.from("gyms").select("id, name")),
+      safeRead<AssistanceType[]>((c) => c.from("assistance_types").select("id, name")),
     ]);
 
   // --- snatch: stand rate per week, per load -------------------------------
@@ -1068,39 +1099,82 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
 
   const variationName = new Map((variations.data ?? []).map((v) => [v.id, v]));
   const skillName = new Map((skills.data ?? []).map((k) => [k.id, k.name]));
-  const perVariation = new Map<
-    number,
-    { attempts: number; successes: number; best: number | null; entries: number; rows: number }
-  >();
+  const assistanceName = new Map((assistanceTypes.data ?? []).map((a) => [a.id, a.name]));
+
+  type SkillAcc = {
+    variationId: number;
+    assistanceId: number | null;
+    attempts: number;
+    successes: number;
+    best: number | null;
+    entries: number;
+    rows: number;
+    weeks: Map<string, { attempts: number; successes: number; hold: number | null }>;
+  };
+  // Keyed on variation AND assistance: a banded attempt and an unassisted one
+  // are different capabilities sharing a name. Where a variation turns out to
+  // have been worked with only one assistance, the split collapses below and
+  // the label is dropped rather than shown as a distinction that is not one.
+  const perVariation = new Map<string, SkillAcc>();
+
   for (const entry of inWindow) {
-    const rows = (attemptRows.data ?? []).filter((a) => a.entry_id === entry.id);
-    const acc = perVariation.get(entry.skill_variation_id) ?? {
+    const date = (entry.sessions as unknown as { session_date: string }).session_date;
+    const week = weekStartOf(date);
+    const key = `${entry.skill_variation_id}|${entry.assistance_id ?? ""}`;
+    const acc: SkillAcc = perVariation.get(key) ?? {
+      variationId: entry.skill_variation_id,
+      assistanceId: entry.assistance_id,
       attempts: 0,
       successes: 0,
       best: null,
       entries: 0,
       rows: 0,
+      weeks: new Map(),
     };
+    const point = acc.weeks.get(week) ?? { attempts: 0, successes: 0, hold: null };
+
+    const rows = (attemptRows.data ?? []).filter((a) => a.entry_id === entry.id);
     acc.entries += 1;
     if (rows.length > 0) {
       acc.rows += 1;
       acc.attempts += rows.length;
-      acc.successes += rows.filter((a) => a.succeeded).length;
+      point.attempts += rows.length;
+      const won = rows.filter((a) => a.succeeded).length;
+      acc.successes += won;
+      point.successes += won;
       // Any recorded hold, not only a successful one. The seconds are the
       // measurement; the success is the verdict against the variation's
       // minimum. An 8 s L-sit against a 10 s bar is a miss and is still the
       // longest hold of that session.
       for (const r of rows) {
         const hold = r.hold_seconds == null ? null : Number(r.hold_seconds);
-        if (hold !== null && (acc.best === null || hold > acc.best)) acc.best = hold;
+        if (hold === null) continue;
+        if (acc.best === null || hold > acc.best) acc.best = hold;
+        if (point.hold === null || hold > point.hold) point.hold = hold;
       }
     } else {
       acc.attempts += entry.attempts ?? 0;
       acc.successes += entry.successful_attempts ?? 0;
+      point.attempts += entry.attempts ?? 0;
+      point.successes += entry.successful_attempts ?? 0;
       const hold = entry.best_hold_seconds == null ? null : Number(entry.best_hold_seconds);
-      if (hold !== null && (acc.best === null || hold > acc.best)) acc.best = hold;
+      if (hold !== null) {
+        if (acc.best === null || hold > acc.best) acc.best = hold;
+        if (point.hold === null || hold > point.hold) point.hold = hold;
+      }
     }
-    perVariation.set(entry.skill_variation_id, acc);
+
+    acc.weeks.set(week, point);
+    perVariation.set(key, acc);
+  }
+
+  // How many assistances each variation was worked with, so the label appears
+  // only where it distinguishes something.
+  const assistancesPer = new Map<number, Set<string>>();
+  for (const acc of perVariation.values()) {
+    const seen = assistancesPer.get(acc.variationId) ?? new Set<string>();
+    seen.add(String(acc.assistanceId ?? ""));
+    assistancesPer.set(acc.variationId, seen);
   }
 
   // --- how much is behind all of it ----------------------------------------
@@ -1212,13 +1286,24 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
     volumeByWeek: [...perWeek.entries()]
       .sort((a, b) => (a[0] < b[0] ? -1 : 1))
       .map(([week, v]) => ({ week, value: v.volume })),
-    skills: [...perVariation.entries()]
-      .map(([id, v]) => {
-        const variation = variationName.get(id);
+    skills: [...perVariation.values()]
+      .map((v) => {
+        const variation = variationName.get(v.variationId);
+        const weeks = [...v.weeks.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
         return {
           variation: variation?.name ?? "Skill",
           skill: skillName.get(variation?.skill_id ?? -1) ?? "",
           difficulty: variation?.difficulty ?? null,
+          minHoldSeconds:
+            variation?.min_hold_seconds == null ? null : Number(variation.min_hold_seconds),
+          // Only where it tells the reader something: one assistance across
+          // the window is a fact about the variation, not a split within it.
+          assistance:
+            (assistancesPer.get(v.variationId)?.size ?? 1) > 1
+              ? (v.assistanceId == null
+                  ? "no assistance recorded"
+                  : (assistanceName.get(v.assistanceId) ?? "assistance"))
+              : null,
           attempts: v.attempts,
           successes: v.successes,
           bestHoldSeconds: v.best,
@@ -1227,6 +1312,14 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
             v.rows === v.entries ? ("attempt" as const)
             : v.rows === 0 ? ("summary" as const)
             : ("mixed" as const),
+          weeks: weeks.map(([week, p]) => ({
+            week,
+            attempts: p.attempts,
+            successes: p.successes,
+          })),
+          holdWeeks: weeks
+            .filter(([, p]) => p.hold != null)
+            .map(([week, p]) => ({ week, seconds: p.hold as number })),
         };
       })
       .sort((a, b) => b.attempts - a.attempts),
