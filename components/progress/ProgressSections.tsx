@@ -1,3 +1,4 @@
+import { DailyTrack } from "@/components/progress/DailyTrack";
 import { HypertrophyDrill } from "@/components/progress/HypertrophyDrill";
 import { QualityDots } from "@/components/progress/QualityDots";
 import { WeeklyBars } from "@/components/progress/WeeklyBars";
@@ -359,6 +360,94 @@ export function CalisthenicsProgress({ data }: { data: ProgressData }) {
           </p>
         </>
       )}
+    </Card>
+  );
+}
+
+/**
+ * The body: one topic covering the sites being tracked and the daily
+ * dimensions that describe how recovered you are.
+ *
+ * Kept together because that is how the question is actually asked — "does
+ * the knee behave differently when I am this sore" is one question, and
+ * splitting the two halves across the screen makes it two.
+ *
+ * It is laid out side by side and nothing is correlated. Two tracks drawn
+ * near each other invite a conclusion; stating that they are exploratory is
+ * the least this screen can do, and computing a coefficient from thirty
+ * subjective daily judgements would be the most misleading thing on it.
+ */
+export function BodyProgress({ data }: { data: ProgressData }) {
+  const { sites, recovery } = data.body;
+  if (sites.length === 0 && recovery.length === 0) return null;
+
+  const from = data.coveredFrom ?? data.from;
+  const hue = "var(--accent)";
+
+  return (
+    <Card>
+      <SectionTitle>Body</SectionTitle>
+
+      {sites.length > 0 ? (
+        <div className="space-y-4">
+          {sites.map((site) => {
+            const free = site.days.filter((d) => d.painFree).length;
+            return (
+              <div key={site.injuryId}>
+                <DailyTrack
+                  title={site.label}
+                  hue="var(--missed)"
+                  from={from}
+                  to={data.to}
+                  max={10}
+                  unit="/10"
+                  points={site.days.map((d) => ({
+                    date: d.date,
+                    value: d.pain ?? 0,
+                    hollow: d.painFree,
+                    label: d.painFree
+                      ? "no pain"
+                      : `${d.pain ?? "not rated"}${
+                          d.nextMorning != null ? ` · ${d.nextMorning} next morning` : ""
+                        }`,
+                  }))}
+                />
+                <p className="mt-0.5 text-[10px] leading-snug text-text-faint">
+                  Hollow is a day you checked and felt nothing — {free} of {site.days.length}.
+                  A day with no dot is a day nobody asked about, which is not the same as a
+                  day without pain.
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {recovery.length > 0 ? (
+        <div className={`space-y-4 ${sites.length > 0 ? "mt-4 border-t border-border pt-4" : ""}`}>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-text-dim">
+            How you reported feeling
+          </p>
+          {recovery.map((m) => (
+            <DailyTrack
+              key={m.slug}
+              title={m.label}
+              hue={hue}
+              from={from}
+              to={data.to}
+              max={m.max}
+              unit={m.slug === "sleep_duration" ? "h" : "/10"}
+              points={m.days.map((d) => ({ date: d.date, value: d.value }))}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      <p className="mt-3 text-[11px] leading-snug text-text-dim">
+        Reported, not measured, and shown side by side rather than against each other. Reading
+        a pattern across these is worth doing; a cause is not available from thirty daily
+        judgements, and nothing here computes one.
+      </p>
     </Card>
   );
 }

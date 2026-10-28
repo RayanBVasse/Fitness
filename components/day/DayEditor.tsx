@@ -7,6 +7,7 @@ import { write } from "@/lib/write";
 import { Card, SectionTitle } from "@/components/ui";
 import { DailyCheckIn } from "@/components/today/DailyCheckIn";
 import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
+import { BodyCard } from "@/components/today/BodyCard";
 import { londonTime, longDate, weekdayName } from "@/lib/time";
 import { SessionWorkArea } from "@/components/session/SessionWorkArea";
 import {
@@ -16,6 +17,9 @@ import {
   type CalisthenicsEntry,
   type CoachReview,
   type ContextNote,
+  type Injury,
+  type InjuryObservation,
+  type ProvokingActivity,
   type DailyMetric,
   type DailyMetricDef,
   type DayRecord,
@@ -71,6 +75,9 @@ type Props = {
   review: CoachReview | null;
   reviewSavedAt: string | null;
   brief: string;
+  injuries: Injury[];
+  provokingActivities: ProvokingActivity[];
+  bodyObservations: InjuryObservation[];
   presets: WeightPreset[];
   variations: SnatchVariation[];
   failureModes: FailureMode[];
@@ -99,6 +106,9 @@ export function DayEditor({
   review,
   reviewSavedAt,
   brief,
+  injuries,
+  provokingActivities,
+  bodyObservations,
   presets,
   variations,
   failureModes,
@@ -363,6 +373,17 @@ export function DayEditor({
       {/* A past day gets the same footer as today's. A review written three
           days later is still that day's review, and the facts block reflects
           whatever has since been corrected on this screen. */}
+      <Card>
+        <BodyCard
+          date={date}
+          sessionId={sessions[0]?.id ?? null}
+          injuries={injuries}
+          activities={provokingActivities}
+          observations={bodyObservations}
+          canWrite
+        />
+      </Card>
+
       <Card>
         <CoachReviewPanel
           scope="day"

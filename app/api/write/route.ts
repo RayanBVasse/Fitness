@@ -183,6 +183,29 @@ const Actions = z.discriminatedUnion("action", [
     review_note: z.string().max(1000).nullable().optional(),
   }),
   z.object({
+    action: z.literal("save_body_observation"),
+    injury_id: z.number().int(),
+    obs_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    // A pain-free day carries no severity: the table refuses both, and so
+    // does this, rather than letting the database be the only thing that
+    // notices.
+    pain_free: z.boolean(),
+    pain_during_0_10: z.number().int().min(0).max(10).nullable().optional(),
+    pain_after_0_10: z.number().int().min(0).max(10).nullable().optional(),
+    provoking_activity_id: z.number().int().nullable().optional(),
+    session_id: uuid.nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+  }),
+  z.object({
+    action: z.literal("set_next_morning"),
+    observation_id: uuid,
+    pain_next_morning_0_10: z.number().int().min(0).max(10).nullable(),
+  }),
+  z.object({
+    action: z.literal("delete_body_observation"),
+    observation_id: uuid,
+  }),
+  z.object({
     action: z.literal("save_review"),
     scope: z.enum(["day", "week"]),
     /** The day, or the Monday of the week. Both ISO dates. */
@@ -812,6 +835,101 @@ export async function POST(request: Request) {
           .select("id");
         if (error) throw error;
         return NextResponse.json({ updated: data?.length ?? 0 });
+      }
+
+      case "save_body_observation": {
+        // One reading per site per day. The table allows several — an import
+        // may hold two sentences about one knee — but a screen that let you
+        // add a second today would quietly double the day in every count.
+        const { data: existing, error: readError } = await db
+          .from("injury_observations")
+          .select("id")
+          .eq("injury_id", input.injury_id)
+          .eq("obs_date", input.obs_date)
+          .eq("provenance", "logged")
+          .limit(1);
+        if (readError) throw readError;
+
+        const patch = {
+          injury_id: input.injury_id,
+          obs_date: input.obs_date,
+          pain_free: input.pain_free,
+          // Cleared rather than left behind when the day turns out pain-free:
+          // a severity from an earlier edit would contradict the flag, and
+          // the check constraint would reject the row anyway.
+          pain_during_0_10: input.pain_free ? null : (input.pain_during_0_10 ?? null),
+          pain_after_0_10: input.pain_free ? null : (input.pain_after_0_10 ?? null),
+          provoking_activity_id: input.pain_free
+            ? null
+            : (input.provoking_activity_id ?? null),
+          session_id: input.session_id ?? null,
+          notes: input.notes ?? null,
+          provenance: "logged" as const,
+        };
+
+        const row = existing?.[0];
+        const result = row
+          ? await db
+              .from("injury_observations")
+              .update({
+                ...patch,
+                // A pain-free day cannot carry a next-morning reading, so the
+                // flag flipping to true has to take it with it.
+                ...(input.pain_free ? { pain_next_morning_0_10: null } : {}),
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", row.id)
+              .select()
+              .single()
+          : await db.from("injury_observations").insert(patch).select().single();
+        if (result.error) throw result.error;
+        return NextResponse.json({ observation: result.data });
+      }
+
+      case "set_next_morning": {
+        // How it felt the morning after, written onto the day it is about.
+        // Recorded a day late by definition, which is why it is patched onto
+        // an existing row rather than opening a new one.
+        const { data, error } = await db
+          .from("injury_observations")
+          .update({
+            pain_next_morning_0_10: input.pain_next_morning_0_10,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", input.observation_id)
+          .eq("provenance", "logged")
+          .eq("pain_free", false)
+          .select()
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) {
+          return NextResponse.json(
+            {
+              error:
+                "That reading is either imported or recorded as pain-free, and a pain-free day holds no severity.",
+            },
+            { status: 409 },
+          );
+        }
+        return NextResponse.json({ observation: data });
+      }
+
+      case "delete_body_observation": {
+        const { data, error } = await db
+          .from("injury_observations")
+          .delete()
+          .eq("id", input.observation_id)
+          .eq("provenance", "logged")
+          .select("id")
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) {
+          return NextResponse.json(
+            { error: "Imported readings are part of the record and are not deleted." },
+            { status: 409 },
+          );
+        }
+        return NextResponse.json({ deleted: input.observation_id });
       }
 
       case "save_review": {

@@ -5,6 +5,7 @@ import { Card, InsufficientData, MIN_ATTEMPTS_FOR_RATE, SectionTitle } from "@/c
 import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
 import { londonTime, longDate } from "@/lib/time";
 import {
+  BodyProgress,
   CalisthenicsProgress,
   HypertrophyProgress,
   SnatchProgress,
@@ -127,6 +128,7 @@ export default async function ProgressPage({
         muscleGroups={reference.muscleGroups}
       />
       <CalisthenicsProgress data={progress} />
+      <BodyProgress data={progress} />
 
       {objective ? (
         <Card>

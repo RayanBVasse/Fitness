@@ -11,6 +11,9 @@ import {
   type DayRecord,
   type Exercise,
   type HypertrophySet,
+  type Injury,
+  type InjuryObservation,
+  type ProvokingActivity,
   type SkillVariation,
   type SnatchAttempt,
   type SnatchBlock,
@@ -49,6 +52,9 @@ export interface BriefInput {
   calisthenicsEntries: CalisthenicsEntry[];
   calisthenicsAttempts: CalisthenicsAttempt[];
   notes: ContextNote[];
+  injuries: Injury[];
+  bodyObservations: InjuryObservation[];
+  activities: ProvokingActivity[];
   variations: SnatchVariation[];
   exercises: Exercise[];
   skillVariations: SkillVariation[];
@@ -289,6 +295,45 @@ export function composeDayBrief(input: BriefInput): { text: string; redactions: 
   }
   lines.push("");
 
+  // --- the body ------------------------------------------------------------
+  const sameDay = input.bodyObservations.filter((o) => o.obs_date === input.date);
+  lines.push("## Body");
+  if (sameDay.length === 0) {
+    lines.push("No reading taken for any tracked site.");
+    if (input.injuries.some((i) => i.is_active)) {
+      missing.push(
+        "No body reading today. Nobody was asked, which is not the same as nothing to report.",
+      );
+    }
+  } else {
+    for (const o of sameDay) {
+      const site = input.injuries.find((i) => i.id === o.injury_id)?.label ?? "Site";
+      if (o.pain_free) {
+        lines.push(`- ${site} — checked, no pain. Recorded, not assumed.`);
+        continue;
+      }
+      const parts = [
+        o.pain_during_0_10 == null ? null : `${o.pain_during_0_10}/10 during`,
+        o.pain_after_0_10 == null ? null : `${o.pain_after_0_10}/10 after`,
+        o.pain_next_morning_0_10 == null
+          ? "next morning not yet recorded"
+          : `${o.pain_next_morning_0_10}/10 next morning`,
+        o.provoking_activity_id == null
+          ? null
+          : `brought on by ${
+              input.activities.find((a) => a.id === o.provoking_activity_id)?.name ?? "something"
+            }`,
+      ].filter(Boolean);
+      lines.push(`- ${site} — ${parts.join(" · ")}`);
+      if (o.notes) lines.push(`  note: ${o.notes}`);
+    }
+    lines.push("");
+    lines.push(
+      "Reported by the athlete about a tracked site. A pattern, never a diagnosis, and no cause is attributed.",
+    );
+  }
+  lines.push("");
+
   // --- what you said -------------------------------------------------------
   const authored = input.notes.filter((n) => n.note_type !== "assistant_review");
   if (authored.length > 0) {
@@ -307,6 +352,7 @@ export function composeDayBrief(input: BriefInput): { text: string; redactions: 
     input.snatchBlocks.length > 0 ||
     input.hypertrophySets.length > 0 ||
     input.calisthenicsEntries.length > 0 ||
+    sameDay.length > 0 ||
     authored.length > 0;
 
   lines.push("## Not recorded");

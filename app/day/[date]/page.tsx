@@ -30,6 +30,9 @@ export default async function DayPage({ params }: { params: Promise<{ date: stri
     calisthenicsEntries: detail.calisthenicsEntries,
     calisthenicsAttempts: detail.calisthenicsAttempts,
     notes: detail.notes,
+    injuries: reference.injuries,
+    bodyObservations: detail.bodyObservations,
+    activities: reference.provokingActivities,
     variations: reference.variations,
     exercises: reference.exercises,
     skillVariations: reference.skillVariations,
@@ -56,6 +59,9 @@ export default async function DayPage({ params }: { params: Promise<{ date: stri
       review={detail.review}
       reviewSavedAt={detail.review ? londonTime(detail.review.updated_at) : null}
       brief={brief.text}
+      injuries={reference.injuries}
+      provokingActivities={reference.provokingActivities}
+      bodyObservations={detail.bodyObservations}
       presets={reference.presets}
       variations={reference.variations}
       failureModes={reference.failureModes}
