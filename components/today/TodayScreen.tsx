@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { DailyCheckIn } from "@/components/today/DailyCheckIn";
 import { DayNotes } from "@/components/today/DayNotes";
+import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
 import { SessionWorkArea } from "@/components/session/SessionWorkArea";
 import { Card, Chip, Pill, SectionTitle } from "@/components/ui";
 import { isoWeekday, londonTime, longDate, weekdayName } from "@/lib/time";
@@ -17,6 +18,7 @@ import {
   type Exercise,
   type FailureMode,
   type Gym,
+  type CoachReview,
   type HypertrophySet,
   type LastExerciseSetting,
   type LastSkillSetting,
@@ -64,6 +66,12 @@ type Props = {
   assistanceTypes: AssistanceType[];
   lastSession: SessionSummary | null;
   notes: ContextNote[];
+  /** The coach's review of today, pasted in from outside. */
+  review: CoachReview | null;
+  /** Already formatted: a timestamp parsed in the browser risks a mismatch. */
+  reviewSavedAt: string | null;
+  /** The day's facts, composed and redacted on the server, ready to copy. */
+  brief: string;
   gyms: Gym[];
   failureModes: FailureMode[];
   presets: WeightPreset[];
@@ -98,6 +106,9 @@ export function TodayScreen({
   assistanceTypes,
   lastSession,
   notes,
+  review,
+  reviewSavedAt,
+  brief,
   gyms,
   failureModes,
   presets,
@@ -415,6 +426,21 @@ export function TodayScreen({
           date={date}
           sessionId={session?.id ?? null}
           notes={notes}
+          canWrite={canWrite}
+        />
+      </Card>
+
+      {/* Last on the page, because it is the last thing that happens: the
+          day's facts go out to the coach, and the coach's reading comes
+          back. Kept clear of the notes above — those are yours. */}
+      <Card>
+        <CoachReviewPanel
+          scope="day"
+          periodKey={date}
+          label={longDate(date)}
+          content={review?.content ?? null}
+          updatedAt={reviewSavedAt}
+          brief={brief}
           canWrite={canWrite}
         />
       </Card>

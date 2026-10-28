@@ -1,9 +1,11 @@
 import { safeRead } from "./supabase";
 import { londonToday } from "./time";
+import type { ThirdParty } from "./coach/verify";
 import type {
   AssistanceType,
   CalisthenicsAttempt,
   CalisthenicsEntry,
+  CoachReview,
   DailyMetric,
   Exercise,
   HypertrophySet,
@@ -71,12 +73,15 @@ export interface TodayData {
   lastSession: SessionSummary | null;
   /** Notes anchored to this day, both the day's own and each workstream's. */
   notes: ContextNote[];
+  /** The coach's review of this day, pasted in from outside. */
+  review: CoachReview | null;
 }
 
 export async function getReferenceData() {
   const [
     gyms, variations, presets, failureModes, tags, settings,
     muscleGroups, exercises, skills, skillVariations, assistanceTypes,
+    thirdParties,
   ] = await Promise.all([
     safeRead<Gym[]>((c) =>
       c.from("gyms").select("*").eq("is_active", true).order("sort_order"),
@@ -109,6 +114,11 @@ export async function getReferenceData() {
     safeRead<AssistanceType[]>((c) =>
       c.from("assistance_types").select("*").eq("is_active", true).order("sort_order"),
     ),
+    // The redaction list. Longest alias first, so "Miss T" is replaced before
+    // a bare "T" could be — the redactor relies on that order.
+    safeRead<ThirdParty[]>((c) =>
+      c.from("third_parties").select("alias, role").eq("is_active", true),
+    ),
   ]);
 
   const settingsMap = new Map((settings.data ?? []).map((row) => [row.key, row.value]));
@@ -124,6 +134,9 @@ export async function getReferenceData() {
     skills: skills.data ?? [],
     skillVariations: skillVariations.data ?? [],
     assistanceTypes: assistanceTypes.data ?? [],
+    thirdParties: [...(thirdParties.data ?? [])].sort(
+      (a, b) => b.alias.length - a.alias.length,
+    ),
     objective: (settingsMap.get("snatch_objective") as SnatchObjective | undefined) ?? null,
     ladder: (settingsMap.get("snatch_warmup_ladder") as WarmupLadder | undefined) ?? null,
     weekdayThemes: (settingsMap.get("weekday_themes") as WeekdayThemes | undefined) ?? {},
@@ -131,6 +144,24 @@ export async function getReferenceData() {
     heavyThresholdKg: (settingsMap.get("heavy_session_threshold_kg") as number | undefined) ?? null,
     error: gyms.error ?? variations.error ?? presets.error ?? settings.error,
   };
+}
+
+/**
+ * The one review for a period, if one has been pasted.
+ *
+ * Keyed on the external id rather than the date columns, because that is the
+ * unique constraint the write path upserts on — reading it the same way means
+ * the screen cannot show two reviews where the database allows only one.
+ */
+async function readReview(scope: "day" | "week", key: string): Promise<CoachReview | null> {
+  const result = await safeRead<CoachReview[]>((c) =>
+    c
+      .from("context_notes")
+      .select<string, CoachReview>("id, content, anchor_date, period_label, updated_at")
+      .eq("external_source_id", `${scope === "week" ? "weekly" : "daily"}_review:${key}`)
+      .limit(1),
+  );
+  return result.data?.[0] ?? null;
 }
 
 export async function getToday(date = londonToday()): Promise<TodayData & { error: string | null }> {
@@ -183,12 +214,15 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
       .order("created_at", { ascending: true }),
   );
 
+  const review = await readReview("day", date);
+
   if (sessions.length === 0) {
     return {
       day,
       metricDefs,
       metrics,
       notes: notesResult.data ?? [],
+      review,
       calisthenicsAttempts: [],
       snatchAttempts: [],
       sessions: [],
@@ -287,6 +321,7 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     metricDefs,
     metrics,
     notes: notesResult.data ?? [],
+    review,
     sessions,
     blocks: blocks.data ?? [],
     snatchBlocks: snatchBlocks.data ?? [],
@@ -526,6 +561,7 @@ export interface DayDetail {
   calisthenicsEntries: CalisthenicsEntry[];
   calisthenicsAttempts: CalisthenicsAttempt[];
   notes: ContextNote[];
+  review: CoachReview | null;
   error: string | null;
 }
 
@@ -638,6 +674,7 @@ export async function getDayDetail(date: string): Promise<DayDetail> {
     calisthenicsEntries,
     calisthenicsAttempts,
     notes: notesResult.data ?? [],
+    review: await readReview("day", date),
     error: sessionResult.error ?? defsResult.error,
   };
 }
@@ -713,6 +750,12 @@ export interface ProgressData {
     entries: number;
     basis: "attempt" | "mixed" | "summary";
   }[];
+  /**
+   * Weekly coach reviews touching this window, newest first, plus an empty
+   * slot for the current week so there is always somewhere to paste one.
+   * `period_label` is the Monday.
+   */
+  weeklyReviews: { week: string; review: CoachReview | null }[];
   error: string | null;
 }
 
@@ -869,6 +912,29 @@ export async function getProgress(weeks: number | null): Promise<ProgressData> {
     perVariation.set(entry.skill_variation_id, acc);
   }
 
+  // Weekly reviews are listed by week, not by what was trained: a week with
+  // a review and no training is still a week someone wrote about, and a week
+  // with training and no review should show its empty slot.
+  const weeklyResult = await safeRead<CoachReview[]>((c) =>
+    c
+      .from("context_notes")
+      .select<string, CoachReview>("id, content, anchor_date, period_label, updated_at")
+      .eq("note_type", "assistant_review")
+      .not("period_label", "is", null)
+      .gte("period_label", from)
+      .order("period_label", { ascending: false }),
+  );
+  const reviewed = weeklyResult.data ?? [];
+  const thisWeek = weekStartOf(to);
+  const weeklyReviews = [
+    ...new Set([thisWeek, ...reviewed.map((r) => r.period_label as string)]),
+  ]
+    .sort((a, b) => (a < b ? 1 : -1))
+    .map((week) => ({
+      week,
+      review: reviewed.find((r) => r.period_label === week) ?? null,
+    }));
+
   return {
     from,
     to,
@@ -903,6 +969,7 @@ export async function getProgress(weeks: number | null): Promise<ProgressData> {
         };
       })
       .sort((a, b) => b.attempts - a.attempts),
+    weeklyReviews,
     error: snatchWeekly.error ?? sets.error ?? entries.error,
   };
 }

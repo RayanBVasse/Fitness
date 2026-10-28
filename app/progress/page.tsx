@@ -2,6 +2,8 @@ import Link from "next/link";
 import { getProgress, getReferenceData, getSnatchSuccessBySource } from "@/lib/queries";
 import { SetupNotice } from "@/components/SetupNotice";
 import { Card, InsufficientData, SectionTitle } from "@/components/ui";
+import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
+import { londonTime, longDate } from "@/lib/time";
 import {
   CalisthenicsProgress,
   HypertrophyProgress,
@@ -172,6 +174,24 @@ export default async function ProgressPage({
           with a low stand rate means the catch is no longer the limiter.
         </p>
       </Card>
+
+      {/* The weekly reviews touching this window, newest first. The current
+          week always appears, empty or not, so there is somewhere to paste
+          one; the rest are the archive, each still editable. No facts block
+          yet — a week's brief is not seven days concatenated, and inventing
+          one here would make it look like the app had computed the week. */}
+      {progress.weeklyReviews.map(({ week, review }) => (
+        <Card key={week}>
+          <CoachReviewPanel
+            scope="week"
+            periodKey={week}
+            label={`week of ${longDate(week)}`}
+            content={review?.content ?? null}
+            updatedAt={review ? londonTime(review.updated_at) : null}
+            canWrite
+          />
+        </Card>
+      ))}
 
     </div>
   );

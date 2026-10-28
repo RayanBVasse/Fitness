@@ -183,6 +183,15 @@ const Actions = z.discriminatedUnion("action", [
     review_note: z.string().max(1000).nullable().optional(),
   }),
   z.object({
+    action: z.literal("save_review"),
+    scope: z.enum(["day", "week"]),
+    /** The day, or the Monday of the week. Both ISO dates. */
+    key: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    // Long-form: these arrive as whole documents with headings and tables.
+    // Blank is how a review is removed, so there is no minimum.
+    content: z.string().max(20000),
+  }),
+  z.object({
     action: z.literal("delete_session"),
     session_id: uuid,
     /** Set only after the user confirmed a count they were shown. */
@@ -803,6 +812,58 @@ export async function POST(request: Request) {
           .select("id");
         if (error) throw error;
         return NextResponse.json({ updated: data?.length ?? 0 });
+      }
+
+      case "save_review": {
+        // One review per period. The external id is the period, so pasting a
+        // corrected review updates the row instead of leaving two documents
+        // claiming to describe the same day.
+        const isWeek = input.scope === "week";
+        const externalId = `${isWeek ? "weekly" : "daily"}_review:${input.key}`;
+        const content = input.content.trim();
+
+        if (!content) {
+          // Clearing the box removes the review. The content column refuses
+          // blank text, so there is no empty-document state to store.
+          const { error } = await db
+            .from("context_notes")
+            .delete()
+            .eq("external_source_id", externalId);
+          if (error) throw error;
+          return NextResponse.json({ deleted: externalId });
+        }
+
+        const { data, error } = await db
+          .from("context_notes")
+          .upsert(
+            {
+              external_source_id: externalId,
+              // Not an athlete report. The Coach must be able to tell its own
+              // reading of a day from what the athlete said about it, or a
+              // hypothesis starts being cited as evidence for itself.
+              note_type: "assistant_review",
+              category: "coaching_advice",
+              content,
+              anchor_date: isWeek ? null : input.key,
+              period_label: isWeek ? input.key : null,
+              source_type: "pasted_review",
+              evidence_status: "external_assistant_interpretation",
+              sensitivity: "normal",
+              // Pasted deliberately into a box labelled for the purpose, by
+              // the only person the gate protects. Same reasoning as an
+              // authored note; the imported pack keeps its own gate.
+              review_status: "approved",
+              reviewed_at: new Date().toISOString(),
+              tags: ["review", isWeek ? "weekly" : "daily"],
+              content_hash: await sha256(content),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "external_source_id" },
+          )
+          .select("id, content, anchor_date, period_label, updated_at")
+          .single();
+        if (error) throw error;
+        return NextResponse.json({ review: data });
       }
 
       case "delete_session": {

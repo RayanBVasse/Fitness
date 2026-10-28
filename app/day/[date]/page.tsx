@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
+import { composeDayBrief } from "@/lib/brief";
 import { getDayDetail, getReferenceData } from "@/lib/queries";
-import { londonToday } from "@/lib/time";
+import { londonTime, londonToday } from "@/lib/time";
 import { SetupNotice } from "@/components/SetupNotice";
 import { DayEditor } from "@/components/day/DayEditor";
 
@@ -15,6 +16,26 @@ export default async function DayPage({ params }: { params: Promise<{ date: stri
   const [detail, reference] = await Promise.all([getDayDetail(date), getReferenceData()]);
   if (detail.error) return <SetupNotice error={detail.error} />;
   if (reference.error) return <SetupNotice error={reference.error} />;
+
+  const gymId = detail.sessions[0]?.gym_id ?? null;
+  const brief = composeDayBrief({
+    date,
+    day: detail.day,
+    gymName: reference.gyms.find((g) => g.id === gymId)?.name ?? null,
+    metricDefs: detail.metricDefs,
+    metrics: detail.metrics,
+    snatchBlocks: detail.snatchBlocks,
+    snatchAttempts: detail.snatchAttempts,
+    hypertrophySets: detail.hypertrophySets,
+    calisthenicsEntries: detail.calisthenicsEntries,
+    calisthenicsAttempts: detail.calisthenicsAttempts,
+    notes: detail.notes,
+    variations: reference.variations,
+    exercises: reference.exercises,
+    skillVariations: reference.skillVariations,
+    assistanceTypes: reference.assistanceTypes,
+    thirdParties: reference.thirdParties,
+  });
 
   return (
     <DayEditor
@@ -32,6 +53,9 @@ export default async function DayPage({ params }: { params: Promise<{ date: stri
       calisthenicsEntries={detail.calisthenicsEntries}
       calisthenicsAttempts={detail.calisthenicsAttempts}
       notes={detail.notes}
+      review={detail.review}
+      reviewSavedAt={detail.review ? londonTime(detail.review.updated_at) : null}
+      brief={brief.text}
       presets={reference.presets}
       variations={reference.variations}
       failureModes={reference.failureModes}

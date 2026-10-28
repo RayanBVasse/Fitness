@@ -1,5 +1,6 @@
+import { composeDayBrief } from "@/lib/brief";
 import { getReferenceData, getToday } from "@/lib/queries";
-import { londonToday } from "@/lib/time";
+import { londonTime, londonToday } from "@/lib/time";
 import { SetupNotice } from "@/components/SetupNotice";
 import { TodayScreen } from "@/components/today/TodayScreen";
 
@@ -14,6 +15,28 @@ export default async function TodayPage() {
   if (reference.error || reference.gyms.length === 0) {
     return <SetupNotice error={reference.error ?? "No reference data found in schema `fitness`."} />;
   }
+
+  // Composed here, on the server, so the redaction list never reaches the
+  // browser and the client component receives a finished string.
+  const gymId = today.sessions[0]?.gym_id ?? null;
+  const brief = composeDayBrief({
+    date,
+    day: today.day,
+    gymName: reference.gyms.find((g) => g.id === gymId)?.name ?? null,
+    metricDefs: today.metricDefs,
+    metrics: today.metrics,
+    snatchBlocks: today.snatchBlocks,
+    snatchAttempts: today.snatchAttempts,
+    hypertrophySets: today.hypertrophySets,
+    calisthenicsEntries: today.calisthenicsEntries,
+    calisthenicsAttempts: today.calisthenicsAttempts,
+    notes: today.notes,
+    variations: reference.variations,
+    exercises: reference.exercises,
+    skillVariations: reference.skillVariations,
+    assistanceTypes: reference.assistanceTypes,
+    thirdParties: reference.thirdParties,
+  });
 
   return (
     <TodayScreen
@@ -41,6 +64,9 @@ export default async function TodayPage() {
       assistanceTypes={reference.assistanceTypes}
       lastSession={today.lastSession}
       notes={today.notes}
+      review={today.review}
+      reviewSavedAt={today.review ? londonTime(today.review.updated_at) : null}
+      brief={brief.text}
       gyms={reference.gyms}
       failureModes={reference.failureModes}
       presets={reference.presets}

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { Card, SectionTitle } from "@/components/ui";
 import { DailyCheckIn } from "@/components/today/DailyCheckIn";
+import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
 import { londonTime, longDate, weekdayName } from "@/lib/time";
 import { SessionWorkArea } from "@/components/session/SessionWorkArea";
 import {
@@ -13,6 +14,7 @@ import {
   type AssistanceType,
   type CalisthenicsAttempt,
   type CalisthenicsEntry,
+  type CoachReview,
   type ContextNote,
   type DailyMetric,
   type DailyMetricDef,
@@ -66,6 +68,9 @@ type Props = {
   calisthenicsEntries: CalisthenicsEntry[];
   calisthenicsAttempts: CalisthenicsAttempt[];
   notes: ContextNote[];
+  review: CoachReview | null;
+  reviewSavedAt: string | null;
+  brief: string;
   presets: WeightPreset[];
   variations: SnatchVariation[];
   failureModes: FailureMode[];
@@ -91,6 +96,9 @@ export function DayEditor({
   calisthenicsEntries,
   calisthenicsAttempts,
   notes,
+  review,
+  reviewSavedAt,
+  brief,
   presets,
   variations,
   failureModes,
@@ -351,6 +359,21 @@ export function DayEditor({
           {error}
         </p>
       ) : null}
+
+      {/* A past day gets the same footer as today's. A review written three
+          days later is still that day's review, and the facts block reflects
+          whatever has since been corrected on this screen. */}
+      <Card>
+        <CoachReviewPanel
+          scope="day"
+          periodKey={date}
+          label={longDate(date)}
+          content={review?.content ?? null}
+          updatedAt={reviewSavedAt}
+          brief={brief}
+          canWrite
+        />
+      </Card>
 
       {isToday ? (
         <Link

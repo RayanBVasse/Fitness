@@ -135,6 +135,23 @@ export interface ContextNote {
 }
 
 /**
+ * A review of a day or a week, written by a coach outside this app and pasted
+ * in. A `context_notes` row like any other narrative, but kept out of the
+ * notes list and given its own `note_type`, because it is not the athlete's
+ * report and must never be read back as one.
+ *
+ * Keyed by period: `anchor_date` for a day, `period_label` for the Monday of
+ * a week. One per period, so a corrected review replaces its predecessor.
+ */
+export interface CoachReview {
+  id: string;
+  content: string;
+  anchor_date: string | null;
+  period_label: string | null;
+  updated_at: string;
+}
+
+/**
  * What a note is about, as opposed to who said it. `note_type` carries the
  * second: an athlete report and an assistant hypothesis are different kinds
  * of claim and must never be blended, which is why they are separate fields.
