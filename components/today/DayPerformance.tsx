@@ -94,8 +94,10 @@ export function DayPerformance({
     if (rows.length > 0) {
       skillAttempts += rows.length;
       skillSuccesses += rows.filter((a) => a.succeeded).length;
+      // Any hold recorded, cleared or not: the seconds are the measurement
+      // and the success is the verdict against the variation's minimum.
       for (const row of rows) {
-        if (row.succeeded && num(row.hold_seconds) > 0) holds.push(num(row.hold_seconds));
+        if (num(row.hold_seconds) > 0) holds.push(num(row.hold_seconds));
       }
     } else {
       skillAttempts += num(entry.attempts);
@@ -164,7 +166,7 @@ export function DayPerformance({
               hint={skillAttempts > 0 ? "across skills" : "no counts recorded"}
             />
             <Figure
-              label="Best hold"
+              label="Longest hold"
               value={bestHold !== null ? `${bestHold}s` : "—"}
               hint={bestHold !== null ? "one skill" : "none recorded"}
             />

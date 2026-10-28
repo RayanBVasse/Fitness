@@ -246,7 +246,7 @@ export function CalisthenicsProgress({ data }: { data: ProgressData }) {
                     {s.successes}/{s.attempts}
                   </span>
                   <span className="block text-[10px] text-text-dim">
-                    {s.bestHoldSeconds != null ? `best ${s.bestHoldSeconds}s` : "no hold"}
+                    {s.bestHoldSeconds != null ? `longest ${s.bestHoldSeconds}s` : "no hold"}
                   </span>
                 </span>
               </li>

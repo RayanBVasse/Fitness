@@ -275,7 +275,7 @@ export function composeDayBrief(input: BriefInput): { text: string; redactions: 
         count(attempts, "attempts"),
         count(successes, "successful"),
         unjudged > 0 ? `${unjudged} recorded but not judged` : null,
-        bestHold == null ? "no hold recorded" : `best hold ${bestHold}s`,
+        bestHold == null ? "no hold recorded" : `longest hold ${bestHold}s`,
         entry.quality_10 == null ? null : `quality ${entry.quality_10}/10`,
         name(input.assistanceTypes, entry.assistance_id),
       ].filter(Boolean);

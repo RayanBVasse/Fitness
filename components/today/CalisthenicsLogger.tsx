@@ -190,7 +190,12 @@ export function CalisthenicsLogger({
         bestHold: target.best_hold_seconds,
       };
     }
-    const holds = rows.filter((a) => a.succeeded && a.hold_seconds != null);
+    // Every recorded hold, not only the successful ones. On a timed skill the
+    // seconds are the measurement and the success is the verdict: an 8 s L-sit
+    // against a 10 s bar is a miss and is still eight seconds of L-sit, which
+    // is the number progression is read from. Gating this on success reported
+    // "no hold" for a session that held three times.
+    const holds = rows.filter((a) => a.hold_seconds != null);
     return {
       basis: "attempt" as const,
       attempts: rows.length,
@@ -204,6 +209,13 @@ export function CalisthenicsLogger({
     .map((id) => byId.get(id))
     .filter((v): v is SkillVariation => !!v);
   const detail = entryAttempts.find((a) => a.id === detailId) ?? null;
+  /**
+   * A hold, rather than a movement. `min_hold_seconds` already marks exactly
+   * these — the L-sit, the freestanding handstand and the back lever hold —
+   * so this needs no new column and no list of slugs in the code: a hold is a
+   * variation with a duration to clear.
+   */
+  const timed = variation?.min_hold_seconds != null;
 
   return (
     <div className="space-y-3">
@@ -374,34 +386,58 @@ export function CalisthenicsLogger({
                 </select>
               </div>
 
-              <div>
-                <div className="mb-1 text-[10px] uppercase tracking-wide text-text-dim">
-                  Technical quality {entry.quality_10 ? `· ${entry.quality_10}/10` : "· not rated"}
+              {/* A hold is measured, not judged. Where the variation has a
+                  minimum duration it is a hold, and seconds take the slot a
+                  1–10 opinion was occupying — you already know how an L-sit
+                  looked; what you do not otherwise record is how long it
+                  lasted. Every other variation keeps the scale. */}
+              {timed ? (
+                <HoldControl
+                  hue={hue}
+                  disabled={!canWrite || busy}
+                  minSeconds={Number(variation.min_hold_seconds)}
+                  attempts={entryAttempts}
+                  onSet={(id, seconds) => patchAttempt(id, { hold_seconds: seconds })}
+                />
+              ) : null}
+
+              {/* Shown for every untimed variation, and for a timed one only
+                  where a rating already exists. Hiding a value that is in the
+                  database leaves it saved and unreachable, which is worse
+                  than showing a control nobody needs. */}
+              {!timed || entry.quality_10 != null ? (
+                <div>
+                  <div className="mb-1 text-[10px] uppercase tracking-wide text-text-dim">
+                    Technical quality{" "}
+                    {entry.quality_10 ? `· ${entry.quality_10}/10` : "· not rated"}
+                  </div>
+                  <div className="flex gap-1">
+                    {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        disabled={!canWrite || busy}
+                        onClick={() =>
+                          setEntryField(entry, { quality_10: entry.quality_10 === n ? null : n })
+                        }
+                        aria-label={`Quality ${n} of 10`}
+                        className="tnum h-8 flex-1 rounded-md border text-[11px] font-semibold disabled:opacity-40"
+                        style={{
+                          borderColor: entry.quality_10 === n ? hue : "var(--border)",
+                          color: entry.quality_10 === n ? hue : "var(--text-dim)",
+                        }}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-[10px] text-text-dim">
+                    {timed
+                      ? "Rated before this skill recorded seconds. Tap the rating again to clear it."
+                      : "How it looked, separate from whether it worked."}
+                  </p>
                 </div>
-                <div className="flex gap-1">
-                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      disabled={!canWrite || busy}
-                      onClick={() =>
-                        setEntryField(entry, { quality_10: entry.quality_10 === n ? null : n })
-                      }
-                      aria-label={`Quality ${n} of 10`}
-                      className="tnum h-8 flex-1 rounded-md border text-[11px] font-semibold disabled:opacity-40"
-                      style={{
-                        borderColor: entry.quality_10 === n ? hue : "var(--border)",
-                        color: entry.quality_10 === n ? hue : "var(--text-dim)",
-                      }}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-1 text-[10px] text-text-dim">
-                  How it looked, separate from whether it worked.
-                </p>
-              </div>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -466,6 +502,115 @@ export function CalisthenicsLogger({
  * only records "that one worked" is a complete record of what you chose to
  * observe, and a blank field is not a zero.
  */
+/**
+ * Seconds held, for a skill whose whole point is the duration.
+ *
+ * It fills in the most recent attempt, because that is the one you just came
+ * down from. Earlier attempts stay reachable by tapping their chip, so this
+ * handles the common case without becoming the only way in.
+ *
+ * The minimum is shown as a bar to clear, not as a verdict. Whether an
+ * attempt counted is what you tapped; this says only how it compares, because
+ * a hold can be long and ugly, and a rule that flipped your own answer would
+ * make the record disagree with you.
+ */
+function HoldControl({
+  hue,
+  disabled,
+  minSeconds,
+  attempts,
+  onSet,
+}: {
+  hue: string;
+  disabled: boolean;
+  minSeconds: number;
+  attempts: CalisthenicsAttempt[];
+  onSet: (attemptId: string, seconds: number | null) => void;
+}) {
+  const latest = attempts[attempts.length - 1] ?? null;
+  const holds = attempts
+    .filter((a) => a.hold_seconds != null)
+    .map((a) => ({ ordinal: a.ordinal, seconds: Number(a.hold_seconds) }));
+  const longest = holds.length > 0 ? Math.max(...holds.map((h) => h.seconds)) : null;
+
+  if (!latest) {
+    return (
+      <div>
+        <div className="mb-1 text-[10px] uppercase tracking-wide text-text-dim">Hold</div>
+        <p className="text-[11px] text-text-dim">
+          Log an attempt, then record how long you held it. The bar for this one is {minSeconds}
+          &nbsp;s.
+        </p>
+      </div>
+    );
+  }
+
+  const current = latest.hold_seconds == null ? null : Number(latest.hold_seconds);
+  const commit = (raw: string) => {
+    const next = raw.trim() === "" ? null : Number(raw);
+    if (next === current) return;
+    onSet(latest.id, Number.isFinite(next as number) ? next : null);
+  };
+
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <span className="text-[10px] uppercase tracking-wide text-text-dim">
+          Hold · attempt {latest.ordinal}
+        </span>
+        <span className="text-[10px] text-text-faint">bar {minSeconds}s</span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          // Keyed on the attempt so the field reloads when a new one is
+          // logged; an uncontrolled input would otherwise keep the last value
+          // on screen against a different attempt.
+          key={latest.id}
+          type="number"
+          inputMode="decimal"
+          step="0.5"
+          min="0"
+          defaultValue={current ?? ""}
+          disabled={disabled}
+          placeholder="—"
+          aria-label={`Seconds held, attempt ${latest.ordinal}`}
+          onBlur={(event) => commit(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit(event.currentTarget.value);
+            }
+          }}
+          className="tnum h-12 w-24 rounded-[var(--radius)] border bg-surface-2 px-2 text-center text-lg font-semibold"
+          style={{ borderColor: current == null ? "var(--border)" : hue }}
+        />
+        <span className="text-sm text-text-dim">seconds</span>
+        {current != null ? (
+          <span
+            className="ml-auto text-[11px] font-semibold"
+            style={{ color: current >= minSeconds ? "var(--stood)" : "var(--text-dim)" }}
+          >
+            {current >= minSeconds ? `over ${minSeconds}s` : `under ${minSeconds}s`}
+          </span>
+        ) : null}
+      </div>
+
+      {holds.length > 0 ? (
+        <p className="tnum mt-1.5 text-[11px] text-text-dim">
+          {holds.map((h) => `${h.seconds}s`).join(" · ")}
+          {longest != null ? ` · longest ${longest}s` : ""}
+        </p>
+      ) : null}
+
+      <p className="mt-1 text-[10px] text-text-dim">
+        How long it lasted, separate from whether it counted. Every hold is kept, cleared or
+        not — a hold under the bar is still the length you held.
+      </p>
+    </div>
+  );
+}
+
 function AttemptDetail({
   attempt,
   hue,

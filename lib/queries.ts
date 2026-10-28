@@ -926,8 +926,12 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
       acc.rows += 1;
       acc.attempts += rows.length;
       acc.successes += rows.filter((a) => a.succeeded).length;
+      // Any recorded hold, not only a successful one. The seconds are the
+      // measurement; the success is the verdict against the variation's
+      // minimum. An 8 s L-sit against a 10 s bar is a miss and is still the
+      // longest hold of that session.
       for (const r of rows) {
-        const hold = r.succeeded && r.hold_seconds != null ? Number(r.hold_seconds) : null;
+        const hold = r.hold_seconds == null ? null : Number(r.hold_seconds);
         if (hold !== null && (acc.best === null || hold > acc.best)) acc.best = hold;
       }
     } else {
