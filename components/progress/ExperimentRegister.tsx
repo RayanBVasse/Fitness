@@ -5,11 +5,16 @@ import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { SectionTitle, wsColour } from "@/components/ui";
 import {
+  EXPERIMENT_KIND_LABELS,
   EXPERIMENT_OUTCOME_LABELS,
+  EXPERIMENT_STATEMENT_LABELS,
   EXPERIMENT_STATUS_LABELS,
+  FOLLOWED_LABELS,
   type Experiment,
+  type ExperimentKind,
   type ExperimentOutcome,
   type ExperimentStatus,
+  type FollowedThrough,
   type Workstream,
 } from "@/lib/types";
 
@@ -32,31 +37,37 @@ import {
  * because it is the commonest honest answer and the easiest to skip past.
  */
 
+const KINDS: ExperimentKind[] = ["hypothesis", "recommendation"];
 const STATUSES: ExperimentStatus[] = ["proposed", "collecting", "concluded", "abandoned"];
 const OUTCOMES: ExperimentOutcome[] = ["inconclusive", "supported", "not_supported"];
+const FOLLOWED: FollowedThrough[] = ["not_yet", "followed", "partly", "declined"];
 
 type Draft = {
   id: string | null;
+  kind: ExperimentKind;
   title: string;
-  hypothesis: string;
+  statement: string;
   measurement: string;
   comparison: string;
   workstream: Workstream | null;
   status: ExperimentStatus;
   outcome: ExperimentOutcome | null;
   outcome_note: string;
+  followed: FollowedThrough;
 };
 
 const blank: Draft = {
   id: null,
+  kind: "hypothesis",
   title: "",
-  hypothesis: "",
+  statement: "",
   measurement: "",
   comparison: "",
   workstream: null,
   status: "collecting",
   outcome: null,
   outcome_note: "",
+  followed: "not_yet",
 };
 
 export function ExperimentRegister({
@@ -90,8 +101,9 @@ export function ExperimentRegister({
       await write({
         action: "save_experiment",
         experiment_id: d.id,
+        kind: d.kind,
         title: d.title.trim(),
-        hypothesis: d.hypothesis.trim(),
+        statement: d.statement.trim(),
         measurement: d.measurement.trim(),
         comparison: d.comparison.trim() || null,
         workstream: d.workstream,
@@ -104,6 +116,7 @@ export function ExperimentRegister({
         ended_on: finished ? today : null,
         outcome: finished ? d.outcome : null,
         outcome_note: finished ? d.outcome_note.trim() || null : null,
+        followed: d.kind === "recommendation" ? d.followed : null,
       });
       setDraft(null);
     });
@@ -114,14 +127,15 @@ export function ExperimentRegister({
   return (
     <div className="space-y-3">
       <SectionTitle aside={live.length > 0 ? `${live.length} open` : null}>
-        Experiments
+        Register
       </SectionTitle>
 
       {experiments.length === 0 && !draft ? (
         <p className="text-[11px] leading-snug text-text-dim">
-          Nothing on the register. A hypothesis worth keeping is one you could be wrong about
+          Nothing on the register. It holds two things: a hypothesis you could be wrong about
           and would notice — &ldquo;calisthenics before hypertrophy holds its technique
-          better&rdquo; rather than &ldquo;train harder&rdquo;.
+          better&rdquo; rather than &ldquo;train harder&rdquo; — and a recommendation you were
+          given, so that next month you can see whether you took it.
         </p>
       ) : null}
 
@@ -149,8 +163,15 @@ export function ExperimentRegister({
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium">{e.title}</span>
                   <span className="block text-[10px] text-text-dim">
+                    {EXPERIMENT_KIND_LABELS[e.kind]}
+                    {" · "}
                     {EXPERIMENT_STATUS_LABELS[e.status]}
-                    {e.outcome ? ` · ${EXPERIMENT_OUTCOME_LABELS[e.outcome]}` : ""}
+                    {/* For advice, what you did about it comes before any
+                        verdict: it is the question actually being asked. */}
+                    {e.followed && e.followed !== "not_yet"
+                      ? ` · ${FOLLOWED_LABELS[e.followed]}`
+                      : ""}
+                    {e.outcome ? ` · ${EXPERIMENT_OUTCOME_LABELS[e.kind][e.outcome]}` : ""}
                     {e.started_on ? ` · from ${shortDate(e.started_on)}` : ""}
                   </span>
                 </span>
@@ -161,8 +182,13 @@ export function ExperimentRegister({
 
               {open ? (
                 <div className="space-y-2 border-t border-border px-3 py-2 text-[12px] leading-snug">
-                  <Field label="Hypothesis">{e.hypothesis}</Field>
+                  <Field label={EXPERIMENT_STATEMENT_LABELS[e.kind]}>{e.statement}</Field>
                   <Field label="What would settle it">{e.measurement}</Field>
+                  {e.kind === "recommendation" ? (
+                    <Field label="Did you follow it">
+                      {FOLLOWED_LABELS[e.followed ?? "not_yet"]}
+                    </Field>
+                  ) : null}
                   {e.comparison ? (
                     <Field label="Comparable observations">{e.comparison}</Field>
                   ) : (
@@ -172,7 +198,7 @@ export function ExperimentRegister({
                     </p>
                   )}
                   {e.outcome ? (
-                    <Field label={EXPERIMENT_OUTCOME_LABELS[e.outcome]}>
+                    <Field label={EXPERIMENT_OUTCOME_LABELS[e.kind][e.outcome]}>
                       {e.outcome_note ?? "No note."}
                     </Field>
                   ) : null}
@@ -184,14 +210,16 @@ export function ExperimentRegister({
                       onClick={() =>
                         setDraft({
                           id: e.id,
+                          kind: e.kind,
                           title: e.title,
-                          hypothesis: e.hypothesis,
+                          statement: e.statement,
                           measurement: e.measurement,
                           comparison: e.comparison ?? "",
                           workstream: e.workstream,
                           status: e.status,
                           outcome: e.outcome,
                           outcome_note: e.outcome_note ?? "",
+                          followed: e.followed ?? "not_yet",
                         })
                       }
                       className="underline underline-offset-2"
@@ -234,7 +262,7 @@ export function ExperimentRegister({
           onClick={() => setDraft(blank)}
           className="min-h-[44px] w-full rounded-[var(--radius)] border border-dashed border-border text-sm font-semibold text-text-dim disabled:opacity-40"
         >
-          + Add a hypothesis
+          + Add to the register
         </button>
       )}
 
@@ -246,8 +274,9 @@ export function ExperimentRegister({
 
       <p className="text-[10px] leading-snug text-text-faint">
         The verdict is yours to write. Nothing on this screen decides whether a hypothesis was
-        supported, and an experiment that ran its course without settling anything is a result
-        rather than a failure.
+        supported, and one that ran its course without settling anything is a result rather
+        than a failure. Advice you decided against is a decision, and more useful than advice
+        you agreed with and forgot.
       </p>
     </div>
   );
@@ -267,28 +296,65 @@ function Form({
   onSave: () => void;
 }) {
   const finished = draft.status === "concluded" || draft.status === "abandoned";
+  const advice = draft.kind === "recommendation";
+  // Advice you declined showed you nothing, so no verdict is offered.
+  const declined = advice && draft.followed === "declined";
   const ready =
-    draft.title.trim() && draft.hypothesis.trim() && draft.measurement.trim() && !busy;
+    draft.title.trim() && draft.statement.trim() && draft.measurement.trim() && !busy;
 
   return (
     <div
       className="space-y-2 rounded-[var(--radius)] border p-3"
       style={{ borderColor: "var(--accent)", background: "var(--surface-2)" }}
     >
+      <div>
+        <Label>Which is it</Label>
+        <div className="flex flex-wrap gap-1.5">
+          {KINDS.map((k) => (
+            <Chip
+              key={k}
+              on={draft.kind === k}
+              disabled={busy}
+              onClick={() =>
+                onChange({
+                  ...draft,
+                  kind: k,
+                  // A hypothesis is not followed; dropping the value keeps
+                  // the form honest about what it will save.
+                  followed: k === "recommendation" ? draft.followed : "not_yet",
+                })
+              }
+            >
+              {EXPERIMENT_KIND_LABELS[k]}
+            </Chip>
+          ))}
+        </div>
+        <p className="mt-1 text-[10px] leading-snug text-text-faint">
+          A hypothesis is something you test. A recommendation is something you were told, and
+          the question at the end is whether you did it.
+        </p>
+      </div>
+
       <Input
         label="Title"
         value={draft.title}
-        placeholder="Calisthenics earlier in the session"
+        placeholder={
+          advice ? "Hold the load until the catch repeats" : "Calisthenics earlier in the session"
+        }
         disabled={busy}
         onChange={(v) => onChange({ ...draft, title: v })}
       />
       <Input
-        label="Hypothesis"
-        value={draft.hypothesis}
+        label={EXPERIMENT_STATEMENT_LABELS[draft.kind]}
+        value={draft.statement}
         rows={2}
-        placeholder="Doing the floating tuck before hypertrophy improves technical consistency."
+        placeholder={
+          advice
+            ? "Prioritise repeatable, balanced snatches at 40–45 kg before increasing the load."
+            : "Doing the floating tuck before hypertrophy improves technical consistency."
+        }
         disabled={busy}
-        onChange={(v) => onChange({ ...draft, hypothesis: v })}
+        onChange={(v) => onChange({ ...draft, statement: v })}
       />
       <Input
         label="What would settle it"
@@ -335,7 +401,38 @@ function Form({
         </div>
       </div>
 
-      {finished ? (
+      {advice ? (
+        <div>
+          <Label>Did you follow it</Label>
+          <div className="flex flex-wrap gap-1.5">
+            {FOLLOWED.map((f) => (
+              <Chip
+                key={f}
+                on={draft.followed === f}
+                disabled={busy}
+                onClick={() =>
+                  onChange({
+                    ...draft,
+                    followed: f,
+                    ...(f === "declined" ? { outcome: null } : {}),
+                  })
+                }
+              >
+                {FOLLOWED_LABELS[f]}
+              </Chip>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {finished && declined ? (
+        <p className="text-[11px] leading-snug text-text-dim">
+          You decided against this one, so there is nothing to conclude about it — nothing was
+          tried. Why you declined is worth a note.
+        </p>
+      ) : null}
+
+      {finished && !declined ? (
         <div>
           <Label>Outcome</Label>
           <div className="flex flex-wrap gap-1.5">
@@ -346,7 +443,7 @@ function Form({
                 disabled={busy}
                 onClick={() => onChange({ ...draft, outcome: draft.outcome === o ? null : o })}
               >
-                {EXPERIMENT_OUTCOME_LABELS[o]}
+                {EXPERIMENT_OUTCOME_LABELS[draft.kind][o]}
               </Chip>
             ))}
           </div>
@@ -369,7 +466,11 @@ function Form({
           className="min-h-[44px] flex-1 rounded-[var(--radius)] text-sm font-bold disabled:opacity-40"
           style={{ background: "var(--accent)", color: "var(--accent-text)" }}
         >
-          {busy ? "Saving…" : draft.id ? "Save changes" : "Add to the register"}
+          {busy
+            ? "Saving…"
+            : draft.id
+              ? "Save changes"
+              : `Add ${advice ? "the recommendation" : "the hypothesis"}`}
         </button>
         <button
           type="button"

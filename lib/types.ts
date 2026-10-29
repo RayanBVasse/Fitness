@@ -128,10 +128,15 @@ export type ExperimentOutcome = "supported" | "not_supported" | "inconclusive";
  *
  * `outcome` is written by a person who read the evidence. Nothing computes it.
  */
+export type ExperimentKind = "hypothesis" | "recommendation";
+export type FollowedThrough = "not_yet" | "followed" | "partly" | "declined";
+
 export interface Experiment {
   id: string;
+  /** What is being tested, or what you were told to do. */
+  kind: ExperimentKind;
   title: string;
-  hypothesis: string;
+  statement: string;
   measurement: string;
   comparison: string | null;
   workstream: Workstream | null;
@@ -140,6 +145,8 @@ export interface Experiment {
   ended_on: string | null;
   outcome: ExperimentOutcome | null;
   outcome_note: string | null;
+  /** Advice only: what you did about it. Null on a hypothesis. */
+  followed: FollowedThrough | null;
   updated_at: string;
 }
 
@@ -150,11 +157,48 @@ export const EXPERIMENT_STATUS_LABELS: Record<ExperimentStatus, string> = {
   abandoned: "Abandoned",
 };
 
-export const EXPERIMENT_OUTCOME_LABELS: Record<ExperimentOutcome, string> = {
-  supported: "Supported",
-  not_supported: "Not supported",
-  // The commonest honest answer in training, and a result in its own right.
-  inconclusive: "Inconclusive",
+/**
+ * The same three verdicts, said the way each kind means them.
+ *
+ * A recommendation is not "supported" — it was followed and helped, or it
+ * was followed and did not. One enum, because the distinction is in the
+ * wording and not in the fact.
+ */
+export const EXPERIMENT_OUTCOME_LABELS: Record<
+  ExperimentKind,
+  Record<ExperimentOutcome, string>
+> = {
+  hypothesis: {
+    supported: "Supported",
+    not_supported: "Not supported",
+    // The commonest honest answer in training, and a result in its own right.
+    inconclusive: "Inconclusive",
+  },
+  recommendation: {
+    supported: "It helped",
+    not_supported: "It did not help",
+    inconclusive: "Could not tell",
+  },
+};
+
+export const EXPERIMENT_KIND_LABELS: Record<ExperimentKind, string> = {
+  hypothesis: "Hypothesis",
+  recommendation: "Recommendation",
+};
+
+/** What the long field is called, which depends on what the row is. */
+export const EXPERIMENT_STATEMENT_LABELS: Record<ExperimentKind, string> = {
+  hypothesis: "Hypothesis",
+  recommendation: "The advice",
+};
+
+export const FOLLOWED_LABELS: Record<FollowedThrough, string> = {
+  not_yet: "Not yet",
+  followed: "Followed it",
+  partly: "Partly",
+  // A decision, not a failure, and more informative than agreeing and
+  // forgetting.
+  declined: "Decided against",
 };
 
 export type NoteReviewStatus = "pending" | "approved" | "rejected";

@@ -191,8 +191,9 @@ const Actions = z.discriminatedUnion("action", [
     action: z.literal("save_experiment"),
     /** Absent when this is a new one. */
     experiment_id: uuid.nullable().optional(),
+    kind: z.enum(["hypothesis", "recommendation"]),
     title: z.string().trim().min(1).max(200),
-    hypothesis: z.string().trim().min(1).max(2000),
+    statement: z.string().trim().min(1).max(2000),
     measurement: z.string().trim().min(1).max(2000),
     comparison: z.string().max(2000).nullable().optional(),
     workstream: z.enum(["snatch", "calisthenics", "hypertrophy"]).nullable().optional(),
@@ -201,6 +202,7 @@ const Actions = z.discriminatedUnion("action", [
     ended_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     outcome: z.enum(["supported", "not_supported", "inconclusive"]).nullable().optional(),
     outcome_note: z.string().max(2000).nullable().optional(),
+    followed: z.enum(["not_yet", "followed", "partly", "declined"]).nullable().optional(),
   }),
   z.object({
     action: z.literal("delete_experiment"),
@@ -860,9 +862,24 @@ export async function POST(request: Request) {
           );
         }
 
+        // Advice you declined showed you nothing, so there is nothing to
+        // conclude about it. Stated here rather than left to a check
+        // constraint, whose error nobody can read.
+        const declined = input.kind === "recommendation" && input.followed === "declined";
+        if (input.outcome && declined) {
+          return NextResponse.json(
+            {
+              error:
+                "You decided against this one, so there is no verdict to record — nothing was tried. The note is still yours to write.",
+            },
+            { status: 400 },
+          );
+        }
+
         const patch = {
+          kind: input.kind,
           title: input.title,
-          hypothesis: input.hypothesis,
+          statement: input.statement,
           measurement: input.measurement,
           comparison: input.comparison?.trim() || null,
           workstream: input.workstream ?? null,
@@ -871,8 +888,10 @@ export async function POST(request: Request) {
           ended_on: input.ended_on ?? null,
           // Cleared when an experiment reopens: a verdict left behind would
           // describe evidence that is still being collected.
-          outcome: finished ? (input.outcome ?? null) : null,
+          outcome: finished && !declined ? (input.outcome ?? null) : null,
           outcome_note: finished ? (input.outcome_note?.trim() || null) : null,
+          // Only advice is followed. A hypothesis is tested.
+          followed: input.kind === "recommendation" ? (input.followed ?? "not_yet") : null,
         };
 
         const result = input.experiment_id
