@@ -6,7 +6,6 @@ import { write } from "@/lib/write";
 import { DailyCheckIn } from "@/components/today/DailyCheckIn";
 import { DayNotes } from "@/components/today/DayNotes";
 import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
-import { BodyCard } from "@/components/today/BodyCard";
 import { SessionWorkArea } from "@/components/session/SessionWorkArea";
 import { Card, Chip, Pill, SectionTitle } from "@/components/ui";
 import { isoWeekday, londonTime, longDate, weekdayName } from "@/lib/time";
@@ -21,9 +20,6 @@ import {
   type Gym,
   type CoachReview,
   type HypertrophySet,
-  type Injury,
-  type InjuryObservation,
-  type ProvokingActivity,
   type LastExerciseSetting,
   type LastSkillSetting,
   type MuscleGroup,
@@ -76,9 +72,6 @@ type Props = {
   reviewSavedAt: string | null;
   /** The day's facts, composed and redacted on the server, ready to copy. */
   brief: string;
-  injuries: Injury[];
-  provokingActivities: ProvokingActivity[];
-  bodyObservations: InjuryObservation[];
   gyms: Gym[];
   failureModes: FailureMode[];
   presets: WeightPreset[];
@@ -116,9 +109,6 @@ export function TodayScreen({
   review,
   reviewSavedAt,
   brief,
-  injuries,
-  provokingActivities,
-  bodyObservations,
   gyms,
   failureModes,
   presets,
@@ -431,19 +421,6 @@ export function TodayScreen({
           know that is not attached to one workstream. These replaced the
           check-in's free-text dimensions, which lived in a table of
           measurements and were never measurements. */}
-      {/* Injuries, soreness, recovery: one topic, sitting with the
-          check-in that records the rest of how the body is. */}
-      <Card>
-        <BodyCard
-          date={date}
-          sessionId={session?.id ?? null}
-          injuries={injuries}
-          activities={provokingActivities}
-          observations={bodyObservations}
-          canWrite={canWrite}
-        />
-      </Card>
-
       <Card>
         <DayNotes
           date={date}

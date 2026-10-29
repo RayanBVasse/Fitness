@@ -5,9 +5,6 @@ import type {
   AssistanceType,
   BodySide,
   Experiment,
-  Injury,
-  InjuryObservation,
-  ProvokingActivity,
   CalisthenicsAttempt,
   CalisthenicsEntry,
   CoachReview,
@@ -80,15 +77,13 @@ export interface TodayData {
   notes: ContextNote[];
   /** The coach's review of this day, pasted in from outside. */
   review: CoachReview | null;
-  /** Body readings for this day and the one before it. */
-  bodyObservations: InjuryObservation[];
 }
 
 export async function getReferenceData() {
   const [
     gyms, variations, presets, failureModes, tags, settings,
     muscleGroups, exercises, skills, skillVariations, assistanceTypes,
-    thirdParties, injuries, provokingActivities,
+    thirdParties,
   ] = await Promise.all([
     safeRead<Gym[]>((c) =>
       c.from("gyms").select("*").eq("is_active", true).order("sort_order"),
@@ -126,12 +121,6 @@ export async function getReferenceData() {
     safeRead<ThirdParty[]>((c) =>
       c.from("third_parties").select("alias, role").eq("is_active", true),
     ),
-    // Sites being tracked. Inactive ones are read too: a resolved injury is
-    // still the history a recurrence is read against.
-    safeRead<Injury[]>((c) => c.from("injuries").select("*").order("id")),
-    safeRead<ProvokingActivity[]>((c) =>
-      c.from("provoking_activities").select("*").eq("is_active", true).order("sort_order"),
-    ),
   ]);
 
   const settingsMap = new Map((settings.data ?? []).map((row) => [row.key, row.value]));
@@ -150,8 +139,6 @@ export async function getReferenceData() {
     thirdParties: [...(thirdParties.data ?? [])].sort(
       (a, b) => b.alias.length - a.alias.length,
     ),
-    injuries: injuries.data ?? [],
-    provokingActivities: provokingActivities.data ?? [],
     objective: (settingsMap.get("snatch_objective") as SnatchObjective | undefined) ?? null,
     ladder: (settingsMap.get("snatch_warmup_ladder") as WarmupLadder | undefined) ?? null,
     weekdayThemes: (settingsMap.get("weekday_themes") as WeekdayThemes | undefined) ?? {},
@@ -159,26 +146,6 @@ export async function getReferenceData() {
     heavyThresholdKg: (settingsMap.get("heavy_session_threshold_kg") as number | undefined) ?? null,
     error: gyms.error ?? variations.error ?? presets.error ?? settings.error,
   };
-}
-
-/**
- * A day's body readings, and the day before's.
- *
- * Two days, because how a site felt the next morning is answered today about
- * yesterday. Reading both means the screen can offer that follow-up without
- * a second round trip, and without inventing a row for a question nobody
- * has been asked yet.
- */
-async function readBody(date: string): Promise<InjuryObservation[]> {
-  const previous = new Date(Date.parse(date) - 86400000).toISOString().slice(0, 10);
-  const result = await safeRead<InjuryObservation[]>((c) =>
-    c
-      .from("injury_observations")
-      .select<string, InjuryObservation>("*")
-      .in("obs_date", [previous, date])
-      .order("obs_date"),
-  );
-  return result.data ?? [];
 }
 
 /**
@@ -250,7 +217,6 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
   );
 
   const review = await readReview("day", date);
-  const bodyObservations = await readBody(date);
 
   if (sessions.length === 0) {
     return {
@@ -259,7 +225,6 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
       metrics,
       notes: notesResult.data ?? [],
       review,
-      bodyObservations,
       calisthenicsAttempts: [],
       snatchAttempts: [],
       sessions: [],
@@ -359,7 +324,6 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     metrics,
     notes: notesResult.data ?? [],
     review,
-    bodyObservations,
     sessions,
     blocks: blocks.data ?? [],
     snatchBlocks: snatchBlocks.data ?? [],
@@ -600,7 +564,6 @@ export interface DayDetail {
   calisthenicsAttempts: CalisthenicsAttempt[];
   notes: ContextNote[];
   review: CoachReview | null;
-  bodyObservations: InjuryObservation[];
   error: string | null;
 }
 
@@ -714,7 +677,6 @@ export async function getDayDetail(date: string): Promise<DayDetail> {
     calisthenicsAttempts,
     notes: notesResult.data ?? [],
     review: await readReview("day", date),
-    bodyObservations: await readBody(date),
     error: sessionResult.error ?? defsResult.error,
   };
 }
@@ -941,8 +903,7 @@ export interface ProgressData {
   /** Per variation over the whole window. Never pooled across variations. */
   skills: SkillSeries[];
   /**
-   * The body over the window: one site's readings, and the daily recovery
-   * dimensions beside them.
+   * The daily dimensions that describe how recovered you are.
    *
    * Days, not weeks, and never averaged. These are single daily judgements —
    * the mean of seven of them is not a measurement, and a week with two
@@ -950,17 +911,6 @@ export interface ProgressData {
    * reading is absent, which is not a nought.
    */
   body: {
-    sites: {
-      injuryId: number;
-      label: string;
-      /** Days with a reading. `pain` is null on a day recorded pain-free. */
-      days: {
-        date: string;
-        painFree: boolean;
-        pain: number | null;
-        nextMorning: number | null;
-      }[];
-    }[];
     recovery: {
       slug: string;
       label: string;
@@ -999,7 +949,7 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
 
   const [
     snatchWeekly, snatchBlocks, sets, exercises, groups, entries, variations, skills, gyms,
-    assistanceTypes, progressInjuries, bodyRows, recoveryRows,
+    assistanceTypes, recoveryRows,
   ] = await Promise.all([
       safeRead<{ week_start: string; weight_kg: number; attempts: number; stood: number }[]>((c) =>
         c
@@ -1077,15 +1027,6 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
       safeRead<Skill[]>((c) => c.from("skills").select("*")),
       safeRead<Gym[]>((c) => c.from("gyms").select("id, name")),
       safeRead<AssistanceType[]>((c) => c.from("assistance_types").select("id, name")),
-      safeRead<Injury[]>((c) => c.from("injuries").select("*")),
-      safeRead<InjuryObservation[]>((c) =>
-        c
-          .from("injury_observations")
-          .select<string, InjuryObservation>("*")
-          .gte("obs_date", from)
-          .lte("obs_date", to)
-          .order("obs_date"),
-      ),
       safeRead<{ metric: string; metric_date: string; value_numeric: number | null }[]>((c) =>
         c
           .from("daily_metrics")
@@ -1312,37 +1253,7 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
   // seven is not a measurement, and a week holding two readings would draw
   // the same mark as a week holding seven. Days without a reading are simply
   // not there.
-  const siteDays = new Map<
-    number,
-    { date: string; painFree: boolean; pain: number | null; nextMorning: number | null }[]
-  >();
-  for (const o of bodyRows.data ?? []) {
-    // The worse of during and after. One number per day per site, and the
-    // higher of the two is the one a recurrence would show in.
-    const pain = o.pain_free
-      ? null
-      : [o.pain_during_0_10, o.pain_after_0_10]
-          .filter((v): v is number => v != null)
-          .reduce<number | null>((worst, v) => (worst === null || v > worst ? v : worst), null);
-    siteDays.set(o.injury_id, [
-      ...(siteDays.get(o.injury_id) ?? []),
-      {
-        date: o.obs_date,
-        painFree: o.pain_free,
-        pain,
-        nextMorning: o.pain_next_morning_0_10,
-      },
-    ]);
-  }
-
   const body = {
-    sites: (progressInjuries.data ?? [])
-      .filter((i) => (siteDays.get(i.id)?.length ?? 0) > 0)
-      .map((i) => ({
-        injuryId: i.id,
-        label: i.label,
-        days: (siteDays.get(i.id) ?? []).sort((a, b) => (a.date < b.date ? -1 : 1)),
-      })),
     recovery: RECOVERY_METRICS.map((m) => {
       const days = (recoveryRows.data ?? [])
         .filter((r) => r.metric === m.slug && r.value_numeric != null)

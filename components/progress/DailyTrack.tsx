@@ -22,10 +22,6 @@ import { useState } from "react";
 export interface DayPoint {
   date: string;
   value: number;
-  /** Drawn hollow: recorded, and recorded as nothing. */
-  hollow?: boolean;
-  /** Said instead of the bare number when this point is tapped. */
-  label?: string;
 }
 
 type Props = {
@@ -57,7 +53,7 @@ export function DailyTrack({ title, hue, from, to, max, points, unit }: Props) {
         <span className="text-[11px] font-semibold">{title}</span>
         <span className="ml-auto shrink-0 whitespace-nowrap text-[11px] font-normal text-text-dim">
           {shown
-            ? `${shortDate(shown.date)} · ${shown.label ?? `${fmt(shown.value)}${unit ?? ""}`}`
+            ? `${shortDate(shown.date)} · ${fmt(shown.value)}${unit ?? ""}`
             : `${fmt(Math.min(...values))}–${fmt(Math.max(...values))}${unit ?? ""} over ${points.length} day${
                 points.length === 1 ? "" : "s"
               }`}
@@ -83,7 +79,7 @@ export function DailyTrack({ title, hue, from, to, max, points, unit }: Props) {
           style={{ height: HEIGHT }}
           role="img"
           aria-label={`${title}: ${points
-            .map((p) => `${shortDate(p.date)} ${p.label ?? fmt(p.value)}`)
+            .map((p) => `${shortDate(p.date)} ${fmt(p.value)}`)
             .join("; ")}`}
         >
           {[0, max].map((v) => (
@@ -103,20 +99,17 @@ export function DailyTrack({ title, hue, from, to, max, points, unit }: Props) {
                 key={p.date}
                 type="button"
                 onClick={() => setSelected(on ? null : p.date)}
-                aria-label={`${shortDate(p.date)}, ${p.label ?? fmt(p.value)}`}
+                aria-label={`${shortDate(p.date)}, ${fmt(p.value)}`}
                 className="absolute top-0 h-full -translate-x-1/2"
                 style={{ left: `${left}%`, width: 22 }}
               >
                 <span
                   className="absolute left-1/2 h-2.5 w-2.5 -translate-x-1/2 translate-y-1/2 rounded-full"
                   style={{
-                    // Hollow where the reading is a recorded nothing, so a
-                    // pain-free day cannot be mistaken for a mild one.
-                    background: p.hollow ? "var(--surface)" : hue,
-                    border: p.hollow ? `2px solid ${hue}` : "none",
+                    background: hue,
                     bottom: `${(Math.min(p.value, max) / max) * 100}%`,
                     opacity: on ? 1 : 0.85,
-                    boxShadow: p.hollow ? "none" : "0 0 0 2px var(--surface)",
+                    boxShadow: "0 0 0 2px var(--surface)",
                   }}
                   aria-hidden
                 />

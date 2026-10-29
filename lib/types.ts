@@ -115,61 +115,6 @@ export interface MuscleRegion {
   groups: string[];
 }
 
-/**
- * The body: injuries, soreness, adaptations, recovery — one topic.
- *
- * An injury is a site that is being tracked, not a diagnosis. The label and
- * the notes are descriptive ("upper-inner region near the kneecap") because
- * this app records patterns and has no business naming conditions.
- */
-export interface Injury {
-  id: number;
-  slug: string;
-  label: string;
-  body_region: string;
-  side: BodySide;
-  detail: string | null;
-  onset_date: string | null;
-  resolved_date: string | null;
-  is_active: boolean;
-  notes: string | null;
-}
-
-export interface ProvokingActivity {
-  id: number;
-  slug: string;
-  name: string;
-  sort_order: number;
-}
-
-export type ChangeDirection = "better" | "same" | "worse" | "unknown";
-
-/**
- * One day's reading of one site.
- *
- * `pain_free` is a positive record, not an absent one: a day you checked and
- * felt nothing is evidence, and the schema refuses to hold both that and a
- * severity. A day with no row at all is a day nobody asked about, which is
- * a different thing entirely and must never be drawn as a nought.
- */
-export interface InjuryObservation {
-  id: string;
-  injury_id: number;
-  session_id: string | null;
-  obs_date: string;
-  pain_free: boolean;
-  pain_during_0_10: number | null;
-  pain_after_0_10: number | null;
-  /** Answered the next day, about this one. The reason the row is revisited. */
-  pain_next_morning_0_10: number | null;
-  provoking_activity_id: number | null;
-  exercise_id: number | null;
-  load_kg: number | null;
-  change_vs_previous: ChangeDirection;
-  notes: string | null;
-  provenance: Provenance;
-}
-
 export type ExperimentStatus = "proposed" | "collecting" | "concluded" | "abandoned";
 export type ExperimentOutcome = "supported" | "not_supported" | "inconclusive";
 

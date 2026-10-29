@@ -31,9 +31,6 @@ export default async function TodayPage() {
     calisthenicsEntries: today.calisthenicsEntries,
     calisthenicsAttempts: today.calisthenicsAttempts,
     notes: today.notes,
-    injuries: reference.injuries,
-    bodyObservations: today.bodyObservations,
-    activities: reference.provokingActivities,
     variations: reference.variations,
     exercises: reference.exercises,
     skillVariations: reference.skillVariations,
@@ -70,9 +67,6 @@ export default async function TodayPage() {
       review={today.review}
       reviewSavedAt={today.review ? londonTime(today.review.updated_at) : null}
       brief={brief.text}
-      injuries={reference.injuries}
-      provokingActivities={reference.provokingActivities}
-      bodyObservations={today.bodyObservations}
       gyms={reference.gyms}
       failureModes={reference.failureModes}
       presets={reference.presets}

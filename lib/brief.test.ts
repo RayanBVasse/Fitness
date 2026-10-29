@@ -32,9 +32,6 @@ const empty: BriefInput = {
   calisthenicsEntries: [],
   calisthenicsAttempts: [],
   notes: [],
-  injuries: [],
-  bodyObservations: [],
-  activities: [],
   variations: [],
   exercises: [],
   skillVariations: [],
@@ -185,69 +182,6 @@ console.log("brief");
   check("the role is there instead", text.includes("a trainer"), text);
   check("the redaction is counted", redactions === 1, redactions);
   check("notes are labelled as reports", text.includes("Not measurements"), text);
-}
-
-// --- the body ---------------------------------------------------------------
-{
-  const knee = { id: 1, slug: "right_knee", label: "Right knee", body_region: "knee", side: "right", detail: null, onset_date: null, resolved_date: null, is_active: true, notes: null } as any;
-  const obs = (over: Record<string, unknown>) =>
-    ({
-      id: "o1", injury_id: 1, session_id: null, obs_date: "2026-10-27", pain_free: false,
-      pain_during_0_10: null, pain_after_0_10: null, pain_next_morning_0_10: null,
-      provoking_activity_id: null, exercise_id: null, load_kg: null,
-      change_vs_previous: "unknown", notes: null, provenance: "logged", ...over,
-    }) as any;
-
-  // A day checked and found clear is a record, not a silence.
-  const free = composeDayBrief({
-    ...empty,
-    injuries: [knee],
-    bodyObservations: [obs({ pain_free: true })],
-  });
-  check("a pain-free day is stated as checked", free.text.includes("checked, no pain"), free.text);
-  check(
-    "a pain-free day counts as something recorded",
-    !free.text.includes("Nothing at all is recorded"),
-    free.text,
-  );
-
-  const sore = composeDayBrief({
-    ...empty,
-    injuries: [knee],
-    activities: [{ id: 3, slug: "lunges", name: "Lunges", sort_order: 20 }],
-    bodyObservations: [obs({ pain_during_0_10: 4, provoking_activity_id: 3 })],
-  });
-  check("the severity is given", sore.text.includes("4/10 during"), sore.text);
-  check("what brought it on is named", sore.text.includes("brought on by Lunges"), sore.text);
-  check(
-    "an unanswered next morning says so rather than reading as nil",
-    sore.text.includes("next morning not yet recorded"),
-    sore.text,
-  );
-  check("no cause is attributed", sore.text.includes("never a diagnosis"), sore.text);
-
-  // A reading from the day before is not today's. The day also holds a set,
-  // so the gap list is reached: on a wholly empty day the blanket "nothing
-  // at all is recorded" supersedes it, which is the more useful statement.
-  const stale = composeDayBrief({
-    ...empty,
-    injuries: [knee],
-    exercises: [{ id: 3, slug: "face-pull", name: "Face pull", muscle_group_id: 1, is_unilateral: false, sort_order: 1 } as any],
-    hypertrophySets: [
-      { id: "h1", session_id: "s1", exercise_id: 3, machine_label: null, load_kg: 20, reps: 12, sets_count: 3, side: "both", order_vs_snatch: "after_snatch", parent_set_id: null, is_drop: false, notes: null, volume_load_kg: 720, logged_at: null, rir: 2 } as any,
-    ],
-    bodyObservations: [obs({ obs_date: "2026-10-26", pain_during_0_10: 9 })],
-  });
-  check(
-    "yesterday's reading is not reported as today's",
-    !stale.text.includes("9/10"),
-    stale.text,
-  );
-  check(
-    "a trained day with no body reading is flagged",
-    stale.text.includes("No body reading today"),
-    stale.text,
-  );
 }
 
 // --- a review of the day is not part of the day's facts ---------------------
