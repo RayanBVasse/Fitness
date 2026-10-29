@@ -11,6 +11,8 @@ import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
 import { Coverage } from "@/components/progress/Coverage";
 import { ExperimentRegister } from "@/components/progress/ExperimentRegister";
 import { londonTime, londonToday, longDate } from "@/lib/time";
+import { composeWeekBrief } from "@/lib/weekBrief";
+import { getWeekFacts } from "@/lib/weekFacts";
 import {
   BodyProgress,
   CalisthenicsProgress,
@@ -67,6 +69,19 @@ export default async function ProgressPage({
   const weights = [...new Set(rows.map((r) => Number(r.weight_kg)))].sort((a, b) => a - b);
   const at = (weight: number, source: "imported" | "logged") =>
     rows.find((r) => Number(r.weight_kg) === weight && r.source === source) ?? null;
+
+  // A facts block for the two weeks you would actually be writing about: the
+  // one in progress and the one that has just finished. The rest are archive
+  // — their review is already written, and composing a brief for every week
+  // in a twelve-month window would be a query per week.
+  const briefs = new Map(
+    await Promise.all(
+      progress.weeklyReviews.slice(0, 2).map(async ({ week }) => {
+        const facts = await getWeekFacts(week);
+        return [week, composeWeekBrief(facts, reference.thirdParties).text] as const;
+      }),
+    ),
+  );
 
   const counts = progress.counts;
   const primary = objective?.primary_load_kg ?? 50;
@@ -251,6 +266,7 @@ export default async function ProgressPage({
               label={`week of ${longDate(week)}`}
               content={review?.content ?? null}
               updatedAt={review ? londonTime(review.updated_at) : null}
+              brief={briefs.get(week) ?? null}
               canWrite
             />
           </Card>
