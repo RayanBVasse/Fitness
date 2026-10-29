@@ -4,6 +4,7 @@ import type { ThirdParty } from "./coach/verify";
 import type {
   AssistanceType,
   BodySide,
+  Experiment,
   Injury,
   InjuryObservation,
   ProvokingActivity,
@@ -783,6 +784,27 @@ export interface ProgressCounts {
   hypertrophySets: number;
   calisthenicsEntries: number;
   calisthenicsAttempts: number;
+}
+
+/**
+ * The register, newest first within each status.
+ *
+ * Live questions come first because they are the ones that change what you
+ * do next week; a concluded experiment is history and reads as such.
+ */
+export async function getExperiments(): Promise<Experiment[]> {
+  const result = await safeRead<Experiment[]>((c) =>
+    c.from("experiments").select<string, Experiment>("*").order("created_at", { ascending: false }),
+  );
+  const order: Record<string, number> = {
+    collecting: 0,
+    proposed: 1,
+    concluded: 2,
+    abandoned: 3,
+  };
+  return [...(result.data ?? [])].sort(
+    (a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9),
+  );
 }
 
 /**

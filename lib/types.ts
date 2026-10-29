@@ -170,6 +170,48 @@ export interface InjuryObservation {
   provenance: Provenance;
 }
 
+export type ExperimentStatus = "proposed" | "collecting" | "concluded" | "abandoned";
+export type ExperimentOutcome = "supported" | "not_supported" | "inconclusive";
+
+/**
+ * A hypothesis being tracked, rather than one mentioned once.
+ *
+ * `measurement` is written before the evidence arrives, so the measure cannot
+ * be chosen afterwards to fit what happened. `comparison` is what counts as a
+ * comparable observation — the field always left out, and the reason a thing
+ * can be "tested" for a month and settle nothing.
+ *
+ * `outcome` is written by a person who read the evidence. Nothing computes it.
+ */
+export interface Experiment {
+  id: string;
+  title: string;
+  hypothesis: string;
+  measurement: string;
+  comparison: string | null;
+  workstream: Workstream | null;
+  status: ExperimentStatus;
+  started_on: string | null;
+  ended_on: string | null;
+  outcome: ExperimentOutcome | null;
+  outcome_note: string | null;
+  updated_at: string;
+}
+
+export const EXPERIMENT_STATUS_LABELS: Record<ExperimentStatus, string> = {
+  proposed: "Proposed",
+  collecting: "Collecting evidence",
+  concluded: "Concluded",
+  abandoned: "Abandoned",
+};
+
+export const EXPERIMENT_OUTCOME_LABELS: Record<ExperimentOutcome, string> = {
+  supported: "Supported",
+  not_supported: "Not supported",
+  // The commonest honest answer in training, and a result in its own right.
+  inconclusive: "Inconclusive",
+};
+
 export type NoteReviewStatus = "pending" | "approved" | "rejected";
 
 export interface ContextNote {

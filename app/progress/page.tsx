@@ -1,9 +1,15 @@
 import Link from "next/link";
-import { getProgress, getReferenceData, getSnatchSuccessBySource } from "@/lib/queries";
+import {
+  getExperiments,
+  getProgress,
+  getReferenceData,
+  getSnatchSuccessBySource,
+} from "@/lib/queries";
 import { SetupNotice } from "@/components/SetupNotice";
 import { Card, InsufficientData, MIN_ATTEMPTS_FOR_RATE, SectionTitle } from "@/components/ui";
 import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
-import { londonTime, longDate } from "@/lib/time";
+import { ExperimentRegister } from "@/components/progress/ExperimentRegister";
+import { londonTime, londonToday, longDate } from "@/lib/time";
 import {
   BodyProgress,
   CalisthenicsProgress,
@@ -47,10 +53,11 @@ export default async function ProgressPage({
   const { period: periodParam } = await searchParams;
   const period = PERIODS.find((p) => p.slug === periodParam) ?? PERIODS[1];
 
-  const [{ data, error }, reference, progress] = await Promise.all([
+  const [{ data, error }, reference, progress, experiments] = await Promise.all([
     getSnatchSuccessBySource(),
     getReferenceData(),
     getProgress(period.days),
+    getExperiments(),
   ]);
   if (error) return <SetupNotice error={error} />;
 
@@ -206,6 +213,13 @@ export default async function ProgressPage({
           only from {MIN_ATTEMPTS_FOR_RATE} attempts; below that the counts are shown and the
           rate is not, because one lift either way would move it by twenty points.
         </p>
+      </Card>
+
+      {/* Beside the reviews, because that is where these come from: an
+          outside reader proposes something, and this is where it stops being
+          a sentence in a conversation. */}
+      <Card>
+        <ExperimentRegister experiments={experiments} today={londonToday()} />
       </Card>
 
       {/* The weekly reviews touching this window, newest first. The current

@@ -183,6 +183,25 @@ const Actions = z.discriminatedUnion("action", [
     review_note: z.string().max(1000).nullable().optional(),
   }),
   z.object({
+    action: z.literal("save_experiment"),
+    /** Absent when this is a new one. */
+    experiment_id: uuid.nullable().optional(),
+    title: z.string().trim().min(1).max(200),
+    hypothesis: z.string().trim().min(1).max(2000),
+    measurement: z.string().trim().min(1).max(2000),
+    comparison: z.string().max(2000).nullable().optional(),
+    workstream: z.enum(["snatch", "calisthenics", "hypertrophy"]).nullable().optional(),
+    status: z.enum(["proposed", "collecting", "concluded", "abandoned"]),
+    started_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    ended_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    outcome: z.enum(["supported", "not_supported", "inconclusive"]).nullable().optional(),
+    outcome_note: z.string().max(2000).nullable().optional(),
+  }),
+  z.object({
+    action: z.literal("delete_experiment"),
+    experiment_id: uuid,
+  }),
+  z.object({
     action: z.literal("save_body_observation"),
     injury_id: z.number().int(),
     obs_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -835,6 +854,60 @@ export async function POST(request: Request) {
           .select("id");
         if (error) throw error;
         return NextResponse.json({ updated: data?.length ?? 0 });
+      }
+
+      case "save_experiment": {
+        // A verdict belongs to a finished experiment. The table refuses it
+        // too, but a 500 from a check constraint tells the user nothing,
+        // and the rule is worth stating where it can be read.
+        const finished = input.status === "concluded" || input.status === "abandoned";
+        if (input.outcome && !finished) {
+          return NextResponse.json(
+            {
+              error:
+                "An outcome belongs to a finished experiment. Conclude or abandon it first — a verdict while still collecting is a conclusion drawn from the evidence you have not gathered yet.",
+            },
+            { status: 400 },
+          );
+        }
+
+        const patch = {
+          title: input.title,
+          hypothesis: input.hypothesis,
+          measurement: input.measurement,
+          comparison: input.comparison?.trim() || null,
+          workstream: input.workstream ?? null,
+          status: input.status,
+          started_on: input.started_on ?? null,
+          ended_on: input.ended_on ?? null,
+          // Cleared when an experiment reopens: a verdict left behind would
+          // describe evidence that is still being collected.
+          outcome: finished ? (input.outcome ?? null) : null,
+          outcome_note: finished ? (input.outcome_note?.trim() || null) : null,
+        };
+
+        const result = input.experiment_id
+          ? await db
+              .from("experiments")
+              .update({ ...patch, updated_at: new Date().toISOString() })
+              .eq("id", input.experiment_id)
+              .select()
+              .single()
+          : await db.from("experiments").insert(patch).select().single();
+        if (result.error) throw result.error;
+        return NextResponse.json({ experiment: result.data });
+      }
+
+      case "delete_experiment": {
+        // Notes pointing at it are kept: the note recorded what you observed,
+        // and that stays true once the question it bore on is withdrawn. The
+        // foreign key nulls the link rather than cascading.
+        const { error } = await db
+          .from("experiments")
+          .delete()
+          .eq("id", input.experiment_id);
+        if (error) throw error;
+        return NextResponse.json({ deleted: input.experiment_id });
       }
 
       case "save_body_observation": {
