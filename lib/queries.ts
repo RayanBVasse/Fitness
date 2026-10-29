@@ -791,6 +791,8 @@ const RECOVERY_METRICS: { slug: string; label: string; max: number | null }[] = 
 /** One logged row, as the drill-down reads it. */
 export interface SetEntry {
   date: string;
+  /** False for a reconstruction. Kept in the record, out of every comparison. */
+  logged: boolean;
   load: number | null;
   reps: number | null;
   setsCount: number;
@@ -886,6 +888,19 @@ export interface ProgressData {
   }[];
   /** Rated blocks left out as reconstruction, so the omission can be named. */
   snatchQualityImported: number;
+  /**
+   * What the weekly charts leave out, per workstream.
+   *
+   * Every per-week figure on this screen counts logged training only: a
+   * reconstruction and a session you recorded are different kinds of claim,
+   * and a bar cannot say which it is drawing. The counts are carried so each
+   * section can say what it set aside rather than quietly dropping it.
+   */
+  imported: {
+    snatchAttempts: number;
+    hypertrophySets: number;
+    calisthenicsAttempts: number;
+  };
   /** Sets per week per muscle group. */
   setsByGroup: { week: string; groups: Record<string, number> }[];
   /**
@@ -948,21 +963,16 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
     : "1970-01-01";
 
   const [
-    snatchWeekly, snatchBlocks, sets, exercises, groups, entries, variations, skills, gyms,
+    snatchBlocks, sets, exercises, groups, entries, variations, skills, gyms,
     assistanceTypes, recoveryRows,
   ] = await Promise.all([
-      safeRead<{ week_start: string; weight_kg: number; attempts: number; stood: number }[]>((c) =>
-        c
-          .from("v_snatch_weekly")
-          .select("week_start, weight_kg, attempts, stood")
-          .gte("week_start", from)
-          .order("week_start"),
-      ),
       safeRead<
         {
           session_date: string;
           weight_kg: number;
-          attempts: number;
+          attempts: number | null;
+          full_stand_successes: number | null;
+          is_substantiated: boolean;
           is_warmup: boolean;
           quality_10: number | null;
           counts_as_full_lift: boolean;
@@ -972,7 +982,7 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
         c
           .from("v_snatch_blocks")
           .select(
-            "session_date, weight_kg, attempts, is_warmup, quality_10, counts_as_full_lift, provenance",
+            "session_date, weight_kg, attempts, full_stand_successes, is_substantiated, is_warmup, quality_10, counts_as_full_lift, provenance",
           )
           .gte("session_date", from)
           .lte("session_date", to),
@@ -995,13 +1005,14 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
           rir: number | null;
           machine_label: string | null;
           side: BodySide;
+          provenance: Provenance;
           sessions: unknown;
         }[]
       >((c) =>
         c
           .from("hypertrophy_sets")
           .select(
-            "exercise_id, volume_load_kg, is_drop, load_kg, reps, sets_count, rir, machine_label, side, sessions(session_date, gym_id)",
+            "exercise_id, volume_load_kg, is_drop, load_kg, reps, sets_count, rir, machine_label, side, provenance, sessions(session_date, gym_id)",
           ),
       ),
       safeRead<Exercise[]>((c) => c.from("exercises").select("*")),
@@ -1014,13 +1025,14 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
           successful_attempts: number | null;
           best_hold_seconds: number | null;
           assistance_id: number | null;
+          provenance: Provenance;
           sessions: unknown;
         }[]
       >((c) =>
         c
           .from("calisthenics_entries")
           .select(
-            "id, skill_variation_id, attempts, successful_attempts, best_hold_seconds, assistance_id, sessions(session_date)",
+            "id, skill_variation_id, attempts, successful_attempts, best_hold_seconds, assistance_id, provenance, sessions(session_date)",
           ),
       ),
       safeRead<SkillVariation[]>((c) => c.from("skill_variations").select("*")),
@@ -1041,18 +1053,46 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
       ),
     ]);
 
-  // --- snatch: stand rate per week, per load -------------------------------
+  // --- snatch: attempts and stands per week, per load ----------------------
+  //
+  // Counted here rather than read from v_snatch_weekly, which pools every
+  // provenance: that view fed these charts a mixture of lifts you logged and
+  // lifts reconstructed from a chat message, while the by-load table at the
+  // foot of the same screen was carefully splitting the two. A week of
+  // reconstruction and a week of training drew the same bar.
+  //
+  // Logged only, and the attempts left out are counted so the omission can
+  // be named rather than simply happening.
   const byLoad = new Map<number, { week: string; attempts: number; stood: number }[]>();
-  for (const row of snatchWeekly.data ?? []) {
-    const load = Number(row.weight_kg);
+  let snatchImportedAttempts = 0;
+  for (const b of snatchBlocks.data ?? []) {
+    if (!b.is_substantiated || !b.counts_as_full_lift) continue;
+    const attempts = Number(b.attempts ?? 0);
+    if (b.provenance !== "logged") {
+      snatchImportedAttempts += attempts;
+      continue;
+    }
+    const load = Number(b.weight_kg);
+    if (!Number.isFinite(load)) continue;
+    const week = weekStartOf(b.session_date);
     const list = byLoad.get(load) ?? [];
-    list.push({ week: row.week_start, attempts: row.attempts ?? 0, stood: row.stood ?? 0 });
-    byLoad.set(load, list);
+    const point = list.find((p) => p.week === week);
+    if (point) {
+      point.attempts += attempts;
+      point.stood += Number(b.full_stand_successes ?? 0);
+    } else {
+      list.push({ week, attempts, stood: Number(b.full_stand_successes ?? 0) });
+    }
+    byLoad.set(
+      load,
+      list.sort((x, y) => (x.week < y.week ? -1 : 1)),
+    );
   }
 
   // --- snatch: tonnage per week, warm-up kept apart ------------------------
   const tonnage = new Map<string, { working: number; warmup: number }>();
   for (const b of snatchBlocks.data ?? []) {
+    if (b.provenance !== "logged") continue;
     const week = weekStartOf(b.session_date);
     const entry = tonnage.get(week) ?? { working: 0, warmup: 0 };
     const kg = Number(b.weight_kg ?? 0) * Number(b.attempts ?? 0);
@@ -1094,10 +1134,19 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
   );
   const groupName = new Map((groups.data ?? []).map((g) => [g.id, g.slug]));
   const perWeek = new Map<string, { groups: Record<string, number>; volume: number }>();
+  let hypertrophyImportedSets = 0;
   for (const row of sets.data ?? []) {
     // Drops were excluded at the query before this read widened; the filter
     // moves here so the weekly set count and volume stay what they were.
     if (row.is_drop) continue;
+    // Reconstruction is out of every weekly figure. A volume load worked out
+    // from a sentence in August and one counted off logged sets in October
+    // are not the same quantity, and a bar cannot say which it is.
+    if (row.provenance !== "logged") {
+      const date = (row.sessions as unknown as { session_date: string } | null)?.session_date;
+      if (date && date >= from && date <= to) hypertrophyImportedSets += row.sets_count;
+      continue;
+    }
     const date = (row.sessions as unknown as { session_date: string } | null)?.session_date;
     if (!date || date < from || date > to) continue;
     const week = weekStartOf(date);
@@ -1133,9 +1182,12 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
 
     const setups = detail.get(row.exercise_id) ?? new Map<string, Setup>();
     const setup = setups.get(key) ?? { machine, gym, sets: 0, entries: [] };
-    setup.sets += row.is_drop ? 0 : row.sets_count;
+    // Reconstruction counts as work done but not as a set you performed as
+    // recorded, so it stays out of the setup's count and is named separately.
+    if (row.provenance === "logged" && !row.is_drop) setup.sets += row.sets_count;
     setup.entries.push({
       date,
+      logged: row.provenance === "logged",
       load: row.load_kg == null ? null : Number(row.load_kg),
       reps: row.reps,
       setsCount: row.sets_count,
@@ -1186,6 +1238,7 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
   // have been worked with only one assistance, the split collapses below and
   // the label is dropped rather than shown as a distinction that is not one.
   const perVariation = new Map<string, SkillAcc>();
+  let calisthenicsImportedAttempts = 0;
 
   for (const entry of inWindow) {
     const date = (entry.sessions as unknown as { session_date: string }).session_date;
@@ -1201,7 +1254,16 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
       rows: 0,
       weeks: new Map(),
     };
-    const point = acc.weeks.get(week) ?? { attempts: 0, successes: 0, hold: null };
+    // Totals keep the reconstruction and name their basis; the weekly chart
+    // does not. A week of attempts counted off rows and a week recovered from
+    // a summary draw the same bar, and the bar cannot say which it is. A
+    // throwaway point when not logged, so a week already holding logged
+    // attempts is not mutated behind the chart's back.
+    const logged = entry.provenance === "logged";
+    const point = logged
+      ? (acc.weeks.get(week) ?? { attempts: 0, successes: 0, hold: null })
+      : { attempts: 0, successes: 0, hold: null };
+    if (!logged) calisthenicsImportedAttempts += entry.attempts ?? 0;
 
     const rows = (attemptRows.data ?? []).filter((a) => a.entry_id === entry.id);
     acc.entries += 1;
@@ -1234,7 +1296,7 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
       }
     }
 
-    acc.weeks.set(week, point);
+    if (logged) acc.weeks.set(week, point);
     perVariation.set(key, acc);
   }
 
@@ -1355,6 +1417,11 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
           .map(([week, qualities]) => ({ week, qualities })),
       })),
     snatchQualityImported,
+    imported: {
+      snatchAttempts: snatchImportedAttempts,
+      hypertrophySets: hypertrophyImportedSets,
+      calisthenicsAttempts: calisthenicsImportedAttempts,
+    },
     setsByGroup: [...perWeek.entries()]
       .sort((a, b) => (a[0] < b[0] ? -1 : 1))
       .map(([week, v]) => ({ week, groups: v.groups })),
@@ -1417,7 +1484,7 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
       .sort((a, b) => b.attempts - a.attempts),
     body,
     weeklyReviews,
-    error: snatchWeekly.error ?? sets.error ?? entries.error,
+    error: snatchBlocks.error ?? sets.error ?? entries.error,
   };
 }
 

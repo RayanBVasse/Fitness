@@ -186,7 +186,10 @@ function ExerciseView({ detail }: { detail: ExerciseDetail }) {
       <p className="text-[11px] leading-snug text-text-dim">
         Each machine is kept separate and never added together: the same number of kilos is a
         different resistance on a cable and on a plate-loaded machine, so pooling them would
-        turn a change of equipment into progress.
+        turn a change of equipment into progress. Sessions marked reconstructed were recovered
+        from a written record rather than logged as they happened; they are shown because they
+        are what you did, and kept out of every comparison because they are not how you
+        recorded it.
       </p>
     </div>
   );
@@ -195,6 +198,10 @@ function ExerciseView({ detail }: { detail: ExerciseDetail }) {
 function SetupView({ setup, hue }: { setup: Setup; hue: string }) {
   const where = [setup.machine, setup.gym].filter(Boolean).join(" · ");
   const matched = matchedLoads(setup.entries);
+  // Counted in sets, not rows, so it reads against the "5 sets" beside it.
+  const reconstructed = setup.entries
+    .filter((e) => !e.logged)
+    .reduce((total, e) => total + e.setsCount, 0);
 
   return (
     <div
@@ -207,6 +214,7 @@ function SetupView({ setup, hue }: { setup: Setup; hue: string }) {
         </span>
         <span className="shrink-0 text-[10px] text-text-faint">
           {setup.sets} set{setup.sets === 1 ? "" : "s"}
+          {reconstructed > 0 ? ` · ${reconstructed} reconstructed` : ""}
         </span>
       </div>
 
@@ -243,6 +251,9 @@ function SetupView({ setup, hue }: { setup: Setup; hue: string }) {
             <span className="flex-1 text-right">
               {describe(e)}
               {e.isDrop ? <span className="ml-1 text-text-faint">drop</span> : null}
+              {e.logged ? null : (
+                <span className="ml-1 text-text-faint">reconstructed</span>
+              )}
               {e.side !== "both" ? <span className="ml-1 text-text-faint">{e.side}</span> : null}
             </span>
           </li>
@@ -286,14 +297,20 @@ function describe(e: SetEntry): string {
  * Loads this setup has been worked at more than once.
  *
  * Drops are excluded: a drop set's load follows the set before it rather than
- * being chosen, so matching on it compares two different intentions. Only
+ * being chosen, so matching on it compares two different intentions. So is
+ * anything reconstructed, which is a reading of the record rather than a
+ * record of the session. Only
  * loads with a first and a most recent session are returned, and only where
  * those are different sessions — one day at a weight is not a comparison.
  */
 function matchedLoads(entries: SetEntry[]) {
   const byLoad = new Map<number, SetEntry[]>();
   for (const e of entries) {
-    if (e.isDrop || e.load == null) continue;
+    // Reconstruction never enters a comparison. A load worked out from a
+    // chat message in August and one you logged in October are the same
+    // number and not the same claim, and putting an arrow between them
+    // would present a reading of the record as a change in the athlete.
+    if (!e.logged || e.isDrop || e.load == null) continue;
     byLoad.set(e.load, [...(byLoad.get(e.load) ?? []), e]);
   }
 

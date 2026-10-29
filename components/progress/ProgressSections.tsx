@@ -125,7 +125,10 @@ export function SnatchProgress({ data }: { data: ProgressData }) {
           <p className="text-[11px] leading-snug text-text-dim">
             The filled part is working weight; the rest is warm-up, and only where a block was
             flagged as one. Pulls and bottom stands carry tonnage but never appear in a stand
-            count.
+            count.{" "}
+            {data.imported.snatchAttempts > 0
+              ? `Every chart above counts logged lifts only: ${data.imported.snatchAttempts} reconstructed attempts are left out, and appear in the by-load table below, which keeps them apart.`
+              : "Every chart above counts logged lifts only."}
           </p>
 
           {/* Quality against load: whether the lighter lifts are becoming
@@ -244,7 +247,10 @@ export function HypertrophyProgress({
           <p className="text-[11px] leading-snug text-text-dim">
             Volume load is weight × reps summed, a measure of work done and not of muscle
             gained. Loads are not comparable across gyms or machines, so a rise here can be a
-            change of equipment.
+            change of equipment.{" "}
+            {data.imported.hypertrophySets > 0
+              ? `These weeks count logged sets only; ${data.imported.hypertrophySets} reconstructed sets are left out of them and still listed, marked, under the exercise below.`
+              : "These weeks count logged sets only."}
           </p>
 
           {/* Where that caveat gets answered: the same totals, taken apart by
@@ -356,7 +362,10 @@ export function CalisthenicsProgress({ data }: { data: ProgressData }) {
           </ul>
           <p className="mt-2 text-[11px] leading-snug text-text-dim">
             Per variation, never pooled. A banded push-up and a freestanding one are different
-            capabilities that share a name, and one rate across them would describe neither.
+            capabilities that share a name, and one rate across them would describe neither.{" "}
+            {data.imported.calisthenicsAttempts > 0
+              ? `The charts count logged attempts only; ${data.imported.calisthenicsAttempts} reconstructed attempts stay in the totals, where the basis is named.`
+              : "The charts count logged attempts only."}
           </p>
         </>
       )}
