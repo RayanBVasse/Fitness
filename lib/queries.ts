@@ -515,7 +515,7 @@ export async function getContextNotes(filters: {
       let q = c
         .from("context_notes")
         .select(
-          "id, external_source_id, note_type, category, content, anchor_date, period_label, evidence_status, sensitivity, candidate_numeric, tags, review_status, linked_session_id, workstream",
+          "id, external_source_id, note_type, category, content, anchor_date, period_label, evidence_status, sensitivity, candidate_numeric, tags, review_status, linked_session_id, workstream, exercise_id, skill_variation_id",
         )
         .order("anchor_date", { ascending: false, nullsFirst: false })
         .limit(200);
@@ -788,6 +788,19 @@ const RECOVERY_METRICS: { slug: string; label: string; max: number | null }[] = 
   { slug: "steps", label: "Steps", max: null },
 ];
 
+/**
+ * A note filed under the thing it is about.
+ *
+ * Shown beside the loads rather than in a list of notes, which is the only
+ * reason for anchoring one. It explains a number and is never counted as
+ * one: nothing here reaches a volume, a rate or a comparison.
+ */
+export interface SubjectNote {
+  date: string | null;
+  category: string;
+  content: string;
+}
+
 /** One logged row, as the drill-down reads it. */
 export interface SetEntry {
   date: string;
@@ -817,6 +830,8 @@ export interface ExerciseDetail {
   group: string;
   sets: number;
   setups: Setup[];
+  /** What you wrote about this exercise, newest first. */
+  notes: SubjectNote[];
 }
 
 /**
@@ -845,6 +860,8 @@ export interface SkillSeries {
   bestHoldSeconds: number | null;
   entries: number;
   basis: "attempt" | "mixed" | "summary";
+  /** What you wrote about this variation, newest first. */
+  notes: SubjectNote[];
   /** Weeks with something recorded. A week absent is a week absent. */
   weeks: { week: string; attempts: number; successes: number }[];
   /**
@@ -1068,8 +1085,22 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
       safeRead<AssistanceType[]>((c) => c.from("assistance_types").select("id, name")),
       // Enough to place a note in a month. A month with notes and no rows is
       // not a month without training; it is a month nobody logged.
-      safeRead<{ anchor_date: string | null; period_label: string | null }[]>((c) =>
-        c.from("context_notes").select("anchor_date, period_label"),
+      safeRead<
+        {
+          anchor_date: string | null;
+          period_label: string | null;
+          content: string;
+          category: string;
+          exercise_id: number | null;
+          skill_variation_id: number | null;
+        }[]
+      >((c) =>
+        c
+          .from("context_notes")
+          .select(
+            "anchor_date, period_label, content, category, exercise_id, skill_variation_id",
+          )
+          .order("anchor_date", { ascending: false }),
       ),
       safeRead<{ metric: string; metric_date: string; value_numeric: number | null }[]>((c) =>
         c
@@ -1458,6 +1489,28 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
     months.set(key, acc);
   }
 
+  // Notes filed under a thing, grouped once for the two screens that read
+  // them. Restricted to the window like everything else: a note from August
+  // explaining an August load does not belong beside an October one.
+  const notesByExercise = new Map<number, SubjectNote[]>();
+  const notesBySkill = new Map<number, SubjectNote[]>();
+  for (const n of noteRows.data ?? []) {
+    if (n.anchor_date && (n.anchor_date < from || n.anchor_date > to)) continue;
+    const note: SubjectNote = {
+      date: n.anchor_date,
+      category: n.category,
+      content: n.content,
+    };
+    if (n.exercise_id != null) {
+      notesByExercise.set(n.exercise_id, [...(notesByExercise.get(n.exercise_id) ?? []), note]);
+    } else if (n.skill_variation_id != null) {
+      notesBySkill.set(n.skill_variation_id, [
+        ...(notesBySkill.get(n.skill_variation_id) ?? []),
+        note,
+      ]);
+    }
+  }
+
   const firstRecord = [...dates].sort()[0] ?? null;
   const windowStart = from === "1970-01-01" ? (firstRecord ?? to) : from;
   const coverage: ProgressData["coverage"] = [];
@@ -1579,6 +1632,7 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
           exerciseId,
           exercise: exerciseName.get(exerciseId) ?? "Exercise",
           group: groupName.get(groupOf.get(exerciseId) ?? -1) ?? "unassigned",
+          notes: notesByExercise.get(exerciseId) ?? [],
           sets: list.reduce((total, s) => total + s.sets, 0),
           setups: list.sort((a, b) => b.sets - a.sets),
         };
@@ -1609,6 +1663,7 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
           successes: v.successes,
           bestHoldSeconds: v.best,
           entries: v.entries,
+          notes: notesBySkill.get(v.variationId) ?? [],
           basis:
             v.rows === v.entries ? ("attempt" as const)
             : v.rows === 0 ? ("summary" as const)

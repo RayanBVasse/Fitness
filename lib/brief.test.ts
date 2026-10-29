@@ -174,6 +174,8 @@ console.log("brief");
         review_status: "approved",
         linked_session_id: null,
         workstream: null,
+        exercise_id: null,
+        skill_variation_id: null,
       },
     ],
     thirdParties: [{ alias: "Rob", role: "a trainer" }],
@@ -204,6 +206,8 @@ console.log("brief");
         review_status: "approved",
         linked_session_id: null,
         workstream: null,
+        exercise_id: null,
+        skill_variation_id: null,
       },
     ],
   });

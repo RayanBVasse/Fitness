@@ -38,22 +38,48 @@ import {
  * with nothing to say.
  */
 
+/**
+ * Something this note could be about, offered beside the topic chips.
+ *
+ * Only what was actually logged in this session: a note about an exercise
+ * you did not do today is a note about something else, and a list of every
+ * exercise in the library would make picking one a search rather than a tap.
+ */
+export type NoteSubject = {
+  kind: "exercise" | "skill";
+  id: number;
+  name: string;
+};
+
 type Props = {
   date: string;
   sessionId: string | null;
   /** Set when this composer belongs to one workstream's tab. */
   workstream?: Workstream;
   notes: ContextNote[];
+  /** What this workstream has on record today. Empty for a day's note. */
+  subjects?: NoteSubject[];
   canWrite: boolean;
 };
 
-export function DayNotes({ date, sessionId, workstream, notes, canWrite }: Props) {
+/** What a saved note is about, where this composer knows the name. */
+function subjectName(subjects: NoteSubject[], note: ContextNote): string | null {
+  const found = subjects.find(
+    (s) =>
+      (s.kind === "exercise" && s.id === note.exercise_id) ||
+      (s.kind === "skill" && s.id === note.skill_variation_id),
+  );
+  return found?.name ?? null;
+}
+
+export function DayNotes({ date, sessionId, workstream, notes, subjects = [], canWrite }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [category, setCategory] = useState<NoteCategory>("observation");
   const [important, setImportant] = useState(false);
+  const [subject, setSubject] = useState<NoteSubject | null>(null);
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -69,6 +95,7 @@ export function DayNotes({ date, sessionId, workstream, notes, canWrite }: Props
     setContent("");
     setCategory("observation");
     setImportant(false);
+    setSubject(null);
   }
 
   /** Open the composer on one topic. */
@@ -76,6 +103,7 @@ export function DayNotes({ date, sessionId, workstream, notes, canWrite }: Props
     setEditingId(null);
     setContent("");
     setImportant(false);
+    setSubject(null);
     setCategory(next);
     setOpen(true);
   }
@@ -103,6 +131,8 @@ export function DayNotes({ date, sessionId, workstream, notes, canWrite }: Props
           content: content.trim(),
           category,
           important,
+          exercise_id: subject?.kind === "exercise" ? subject.id : null,
+          skill_variation_id: subject?.kind === "skill" ? subject.id : null,
         });
       } else {
         await write({
@@ -113,6 +143,8 @@ export function DayNotes({ date, sessionId, workstream, notes, canWrite }: Props
           workstream: workstream ?? null,
           session_id: sessionId,
           important,
+          exercise_id: subject?.kind === "exercise" ? subject.id : null,
+          skill_variation_id: subject?.kind === "skill" ? subject.id : null,
         });
       }
       reset();
@@ -128,6 +160,13 @@ export function DayNotes({ date, sessionId, workstream, notes, canWrite }: Props
         : "observation",
     );
     setImportant(note.tags.includes("important"));
+    setSubject(
+      subjects.find(
+        (s) =>
+          (s.kind === "exercise" && s.id === note.exercise_id) ||
+          (s.kind === "skill" && s.id === note.skill_variation_id),
+      ) ?? null,
+    );
     setOpen(true);
   }
 
@@ -159,6 +198,7 @@ export function DayNotes({ date, sessionId, workstream, notes, canWrite }: Props
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-[10px] uppercase tracking-wide" style={{ color: hue }}>
                   {NOTE_CATEGORY_LABELS[note.category as NoteCategory] ?? note.category}
+                  {subjectName(subjects, note) ? ` · ${subjectName(subjects, note)}` : ""}
                   {note.tags.includes("important") ? " · important" : ""}
                 </span>
                 {/* text-dim, not text-faint: these are controls, and faint
@@ -228,6 +268,44 @@ export function DayNotes({ date, sessionId, workstream, notes, canWrite }: Props
               );
             })}
           </div>
+
+          {/* What it is about. Optional: most notes are about the session,
+              and a note forced to name an exercise would start naming one
+              it is not about. */}
+          {subjects.length > 0 ? (
+            <div className="mt-2">
+              <div className="mb-1 text-[10px] uppercase tracking-wide text-text-dim">
+                About
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {subjects.map((s) => {
+                  const on = subject?.kind === s.kind && subject.id === s.id;
+                  return (
+                    <button
+                      key={`${s.kind}-${s.id}`}
+                      type="button"
+                      onClick={() => setSubject(on ? null : s)}
+                      aria-pressed={on}
+                      className="min-h-[34px] rounded-full border px-2.5 text-[11px] font-semibold"
+                      style={{
+                        borderColor: on ? hue : `color-mix(in oklab, ${hue} 32%, transparent)`,
+                        background: on
+                          ? `color-mix(in oklab, ${hue} 8%, transparent)`
+                          : "transparent",
+                        color: on ? hue : "var(--text-dim)",
+                      }}
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1 text-[10px] leading-snug text-text-faint">
+                Naming one files the note under that exercise on Progress, where you read it
+                back beside the loads. Leave it for a note about the session.
+              </p>
+            </div>
+          ) : null}
 
           <div className="mt-2 flex items-center gap-2">
             <button

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { SnatchLogger } from "@/components/today/SnatchLogger";
 import { HypertrophyLogger } from "@/components/today/HypertrophyLogger";
 import { CalisthenicsLogger } from "@/components/today/CalisthenicsLogger";
-import { DayNotes } from "@/components/today/DayNotes";
+import { DayNotes, type NoteSubject } from "@/components/today/DayNotes";
 import { DayPerformance } from "@/components/today/DayPerformance";
 import { Card, wsColour } from "@/components/ui";
 import {
@@ -162,6 +162,39 @@ export function SessionWorkArea({
 
   const hue = wsColour(tab);
 
+  /**
+   * What each tab's notes can be about: the exercises and variations this
+   * session has on record, in the order they were worked. Only what was
+   * logged — a note about something you did not do today is a note about
+   * something else, and offering the whole library would turn a tap into a
+   * search.
+   */
+  const workedExercises: NoteSubject[] = [
+    ...new Map(
+      hypertrophySets.map((set) => [
+        set.exercise_id,
+        {
+          kind: "exercise" as const,
+          id: set.exercise_id,
+          name: exercises.find((e) => e.id === set.exercise_id)?.name ?? "Exercise",
+        },
+      ]),
+    ).values(),
+  ];
+  const workedSkills: NoteSubject[] = [
+    ...new Map(
+      calisthenicsEntries.map((entry) => [
+        entry.skill_variation_id,
+        {
+          kind: "skill" as const,
+          id: entry.skill_variation_id,
+          name:
+            skillVariations.find((v) => v.id === entry.skill_variation_id)?.name ?? "Skill",
+        },
+      ]),
+    ).values(),
+  ];
+
   return (
     <>
       {/* One work area, three tabs. Selecting a tab records nothing: the
@@ -183,7 +216,8 @@ export function SessionWorkArea({
           {WORKSTREAMS.map((workstream) => {
             const on = tab === workstream;
             const tone = wsColour(workstream);
-            return (
+
+  return (
               <button
                 key={workstream}
                 type="button"
@@ -254,6 +288,7 @@ export function SessionWorkArea({
               sessionId={sessionId}
               workstream="hypertrophy"
               notes={notes}
+              subjects={workedExercises}
               canWrite={canWrite}
             />
           </div>
@@ -279,6 +314,7 @@ export function SessionWorkArea({
               sessionId={sessionId}
               workstream="calisthenics"
               notes={notes}
+              subjects={workedSkills}
               canWrite={canWrite}
             />
           </div>

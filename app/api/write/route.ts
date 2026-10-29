@@ -155,6 +155,9 @@ const Actions = z.discriminatedUnion("action", [
     workstream: z.enum(["snatch", "calisthenics", "hypertrophy"]).nullable().optional(),
     session_id: uuid.nullable().optional(),
     important: z.boolean().optional(),
+    // What the note is about. At most one; the table refuses both.
+    exercise_id: z.number().int().nullable().optional(),
+    skill_variation_id: z.number().int().nullable().optional(),
   }),
   z.object({
     action: z.literal("update_note"),
@@ -171,6 +174,8 @@ const Actions = z.discriminatedUnion("action", [
       "sleep",
     ]),
     important: z.boolean().optional(),
+    exercise_id: z.number().int().nullable().optional(),
+    skill_variation_id: z.number().int().nullable().optional(),
   }),
   z.object({
     action: z.literal("delete_note"),
@@ -753,6 +758,11 @@ export async function POST(request: Request) {
             review_status: "approved",
             reviewed_at: new Date().toISOString(),
             linked_session_id: input.session_id ?? null,
+            // A note is about one thing. Sending both is a bug upstream, and
+            // the subject is dropped rather than letting the table reject the
+            // whole write with a constraint error nobody can read.
+            exercise_id: input.skill_variation_id == null ? (input.exercise_id ?? null) : null,
+            skill_variation_id: input.skill_variation_id ?? null,
             tags: input.important ? ["authored", "important"] : ["authored"],
             content_hash: await sha256(input.content),
           })
@@ -787,6 +797,8 @@ export async function POST(request: Request) {
           .update({
             content: input.content,
             category: input.category,
+            exercise_id: input.skill_variation_id == null ? (input.exercise_id ?? null) : null,
+            skill_variation_id: input.skill_variation_id ?? null,
             tags,
             content_hash: await sha256(input.content),
             updated_at: new Date().toISOString(),

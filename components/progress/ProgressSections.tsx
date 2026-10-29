@@ -1,5 +1,5 @@
 import { DailyTrack } from "@/components/progress/DailyTrack";
-import { HypertrophyDrill } from "@/components/progress/HypertrophyDrill";
+import { HypertrophyDrill, SubjectNotes } from "@/components/progress/HypertrophyDrill";
 import { QualityDots } from "@/components/progress/QualityDots";
 import { WeeklyBars } from "@/components/progress/WeeklyBars";
 import {
@@ -321,6 +321,11 @@ export function CalisthenicsProgress({ data }: { data: ProgressData }) {
                         Only weeks that timed a hold. A week of attempts nobody timed is not a
                         week of zero seconds.
                       </p>
+                    </div>
+                  ) : null}
+                  {s.notes.length > 0 ? (
+                    <div className="mt-2">
+                      <SubjectNotes notes={s.notes} hue={hue} />
                     </div>
                   ) : null}
                 </div>

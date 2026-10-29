@@ -174,6 +174,9 @@ export interface ContextNote {
   review_status: NoteReviewStatus;
   linked_session_id: string | null;
   workstream: Workstream | null;
+  /** What the note is about. At most one is set; both null is a day's note. */
+  exercise_id: number | null;
+  skill_variation_id: number | null;
 }
 
 /**

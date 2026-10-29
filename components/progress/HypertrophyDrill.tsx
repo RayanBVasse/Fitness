@@ -183,6 +183,8 @@ function ExerciseView({ detail }: { detail: ExerciseDetail }) {
       {detail.setups.map((setup, i) => (
         <SetupView key={i} setup={setup} hue={hue} />
       ))}
+      {detail.notes.length > 0 ? <SubjectNotes notes={detail.notes} hue={hue} /> : null}
+
       <p className="text-[11px] leading-snug text-text-dim">
         Each machine is kept separate and never added together: the same number of kilos is a
         different resistance on a cable and on a plate-loaded machine, so pooling them would
@@ -256,6 +258,42 @@ function SetupView({ setup, hue }: { setup: Setup; hue: string }) {
               )}
               {e.side !== "both" ? <span className="ml-1 text-text-faint">{e.side}</span> : null}
             </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * What you wrote about this, beside the numbers it explains.
+ *
+ * The reason for anchoring a note at all: written once in the gym, read back
+ * where the loads are. It is a report and never a measurement — nothing here
+ * reaches the set count above it or the comparison beside it.
+ */
+export function SubjectNotes({
+  notes,
+  hue,
+}: {
+  notes: { date: string | null; category: string; content: string }[];
+  hue: string;
+}) {
+  return (
+    <div
+      className="rounded-[var(--radius)] border-l-2 pl-3"
+      style={{ borderColor: `color-mix(in oklab, ${hue} 55%, transparent)` }}
+    >
+      <div className="text-[10px] uppercase tracking-wide text-text-dim">
+        What you wrote
+      </div>
+      <ul className="mt-1 space-y-1.5">
+        {notes.map((n, i) => (
+          <li key={i} className="text-[12px] leading-snug">
+            <span className="tnum text-text-faint">
+              {n.date ? shortDate(n.date) : "undated"}
+            </span>{" "}
+            <span className="whitespace-pre-wrap">{n.content}</span>
           </li>
         ))}
       </ul>
