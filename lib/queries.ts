@@ -889,6 +889,33 @@ export interface ProgressData {
   /** Rated blocks left out as reconstruction, so the omission can be named. */
   snatchQualityImported: number;
   /**
+   * What each month of the window holds, and how it was recorded.
+   *
+   * Classified by HOW the records were made, never by whether there are
+   * enough of them. Four sessions in September is either a quiet month or a
+   * badly kept one, and no column of this table can tell you which — but it
+   * can tell you that those four were recovered from a written source while
+   * October's twelve were logged as they happened, which is usually the
+   * answer. Absence of a row is absence of a record.
+   */
+  coverage: {
+    /** "2026-09". */
+    month: string;
+    label: string;
+    /** Days holding any record. Not days trained. */
+    days: number;
+    snatchBlocks: number;
+    hypertrophySets: number;
+    calisthenicsEntries: number;
+    notes: number;
+    basis: "logged" | "reconstructed" | "mixed" | "notes_only" | "nothing";
+    /** The window cuts this month, so the counts are not the whole of it. */
+    clipped: boolean;
+    /** This is the month the window ends in. */
+    current: boolean;
+  }[];
+
+  /**
    * What the weekly charts leave out, per workstream.
    *
    * Every per-week figure on this screen counts logged training only: a
@@ -964,7 +991,7 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
 
   const [
     snatchBlocks, sets, exercises, groups, entries, variations, skills, gyms,
-    assistanceTypes, recoveryRows,
+    assistanceTypes, noteRows, recoveryRows,
   ] = await Promise.all([
       safeRead<
         {
@@ -1039,6 +1066,11 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
       safeRead<Skill[]>((c) => c.from("skills").select("*")),
       safeRead<Gym[]>((c) => c.from("gyms").select("id, name")),
       safeRead<AssistanceType[]>((c) => c.from("assistance_types").select("id, name")),
+      // Enough to place a note in a month. A month with notes and no rows is
+      // not a month without training; it is a month nobody logged.
+      safeRead<{ anchor_date: string | null; period_label: string | null }[]>((c) =>
+        c.from("context_notes").select("anchor_date, period_label"),
+      ),
       safeRead<{ metric: string; metric_date: string; value_numeric: number | null }[]>((c) =>
         c
           .from("daily_metrics")
@@ -1348,6 +1380,115 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
     if (date) dates.add(date);
   }
 
+  // --- coverage, month by month --------------------------------------------
+  //
+  // Every month between the first record and the end of the window gets a
+  // row, including the months holding nothing: a month missing from a list
+  // reads as a month that did not happen, and the whole point here is that
+  // a gap in the record is not a gap in the training.
+  type MonthAcc = {
+    days: Set<string>;
+    snatchBlocks: number;
+    hypertrophySets: number;
+    calisthenicsEntries: number;
+    notes: number;
+    logged: number;
+    other: number;
+  };
+  const months = new Map<string, MonthAcc>();
+  const monthOf = (date: string) => date.slice(0, 7);
+  const touch = (date: string): MonthAcc => {
+    const key = monthOf(date);
+    const acc = months.get(key) ?? {
+      days: new Set<string>(),
+      snatchBlocks: 0,
+      hypertrophySets: 0,
+      calisthenicsEntries: 0,
+      notes: 0,
+      logged: 0,
+      other: 0,
+    };
+    months.set(key, acc);
+    return acc;
+  };
+  const record = (acc: MonthAcc, date: string, provenance: Provenance) => {
+    acc.days.add(date);
+    if (provenance === "logged") acc.logged += 1;
+    else acc.other += 1;
+  };
+
+  for (const b of snatchBlocks.data ?? []) {
+    const acc = touch(b.session_date);
+    acc.snatchBlocks += 1;
+    record(acc, b.session_date, b.provenance);
+  }
+  for (const row of sets.data ?? []) {
+    const date = (row.sessions as unknown as { session_date: string } | null)?.session_date;
+    if (!date || date < from || date > to) continue;
+    const acc = touch(date);
+    acc.hypertrophySets += row.sets_count;
+    record(acc, date, row.provenance);
+  }
+  for (const e of inWindow) {
+    const date = (e.sessions as unknown as { session_date: string }).session_date;
+    const acc = touch(date);
+    acc.calisthenicsEntries += 1;
+    record(acc, date, e.provenance);
+  }
+  for (const n of noteRows.data ?? []) {
+    // A note dated to a day belongs to that day's month; one labelled with a
+    // period belongs to that period. One with neither cannot be placed, and
+    // is not guessed at.
+    const key = n.anchor_date
+      ? monthOf(n.anchor_date)
+      : /^\d{4}-\d{2}$/.test(n.period_label ?? "")
+        ? (n.period_label as string)
+        : null;
+    if (!key || key < monthOf(from) || key > monthOf(to)) continue;
+    const acc = months.get(key) ?? {
+      days: new Set<string>(),
+      snatchBlocks: 0,
+      hypertrophySets: 0,
+      calisthenicsEntries: 0,
+      notes: 0,
+      logged: 0,
+      other: 0,
+    };
+    acc.notes += 1;
+    months.set(key, acc);
+  }
+
+  const firstRecord = [...dates].sort()[0] ?? null;
+  const windowStart = from === "1970-01-01" ? (firstRecord ?? to) : from;
+  const coverage: ProgressData["coverage"] = [];
+  for (let m = monthOf(windowStart); m <= monthOf(to); m = nextMonth(m)) {
+    const acc = months.get(m);
+    const rows = (acc?.logged ?? 0) + (acc?.other ?? 0);
+    const monthStart = `${m}-01`;
+    const monthEnd = endOfMonth(m);
+    coverage.push({
+      month: m,
+      label: monthLabel(m),
+      days: acc?.days.size ?? 0,
+      snatchBlocks: acc?.snatchBlocks ?? 0,
+      hypertrophySets: acc?.hypertrophySets ?? 0,
+      calisthenicsEntries: acc?.calisthenicsEntries ?? 0,
+      notes: acc?.notes ?? 0,
+      basis:
+        rows === 0
+          ? (acc?.notes ?? 0) > 0
+            ? "notes_only"
+            : "nothing"
+          : (acc?.other ?? 0) === 0
+            ? "logged"
+            : (acc?.logged ?? 0) === 0
+              ? "reconstructed"
+              : "mixed",
+      clipped: monthStart < windowStart || monthEnd > to,
+      current: monthOf(to) === m,
+    });
+  }
+
   const snatchAttemptTotal = [...byLoad.values()]
     .flat()
     .reduce((total, point) => total + point.attempts, 0);
@@ -1417,6 +1558,7 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
           .map(([week, qualities]) => ({ week, qualities })),
       })),
     snatchQualityImported,
+    coverage,
     imported: {
       snatchAttempts: snatchImportedAttempts,
       hypertrophySets: hypertrophyImportedSets,
@@ -1502,6 +1644,29 @@ function roundUpScale(values: number[]): number {
     if (top <= step * magnitude) return step * magnitude;
   }
   return 10 * magnitude;
+}
+
+/** "2026-09" -> "2026-10". */
+function nextMonth(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+}
+
+/** The last day of a month, so a window edge can be told from a month edge. */
+function endOfMonth(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+}
+
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/** Spelled out, for the hydration reason the chart labels give. */
+function monthLabel(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return `${MONTH_NAMES[m - 1] ?? m} ${y}`;
 }
 
 /** Monday of the ISO week, matching fitness.week_start. */

@@ -8,6 +8,7 @@ import {
 import { SetupNotice } from "@/components/SetupNotice";
 import { Card, InsufficientData, MIN_ATTEMPTS_FOR_RATE, SectionTitle } from "@/components/ui";
 import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
+import { Coverage } from "@/components/progress/Coverage";
 import { ExperimentRegister } from "@/components/progress/ExperimentRegister";
 import { londonTime, londonToday, longDate } from "@/lib/time";
 import {
@@ -136,6 +137,11 @@ export default async function ProgressPage({
       />
       <CalisthenicsProgress data={progress} />
       <BodyProgress data={progress} />
+
+      {/* After the charts, because it explains them: a month that looks
+          quiet above is usually a month that was written down differently,
+          and this is where that can be read. */}
+      <Coverage data={progress} />
 
       {objective ? (
         <Card>
