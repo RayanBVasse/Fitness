@@ -12,7 +12,7 @@ export default async function HistoryPage() {
 
   if (history.sessions.length === 0) {
     return (
-      <div className="space-y-4 pt-5">
+      <div className="mx-auto max-w-[820px] space-y-4 pt-5">
         <header>
           <h1 className="text-2xl font-bold">History</h1>
         </header>

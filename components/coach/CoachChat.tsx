@@ -72,7 +72,7 @@ export function CoachChat({ conversationId }: { conversationId: string }) {
   }
 
   return (
-    <div className="space-y-4 pt-5">
+    <div className="mx-auto max-w-[820px] space-y-4 pt-5">
       <header>
         <h1 className="text-2xl font-bold leading-tight">Coach</h1>
         <p className="text-sm text-text-dim">

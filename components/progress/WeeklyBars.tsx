@@ -44,6 +44,15 @@ type Props = {
 
 const HEIGHT = 56;
 const GAP = 2;
+/**
+ * The widest a bar may be, as a share of the chart.
+ *
+ * Without a cap a four-week window divides the width into quarters and draws
+ * four slabs: at a 540px column that is a 130px bar, which reads as a block
+ * of colour rather than as a quantity. The slot stays the full share — it is
+ * the tap target — and the mark sits thin in the middle of it.
+ */
+const MAX_BAR = 12;
 
 export function WeeklyBars({ title, hue, bars, unit, partLabel, empty }: Props) {
   const format = (value: number) => formatUnit(value, unit);
@@ -61,7 +70,8 @@ export function WeeklyBars({ title, hue, bars, unit, partLabel, empty }: Props) 
 
   const max = Math.max(...bars.map((b) => b.value), 1);
   const peak = bars.reduce((best, b, i) => (b.value > bars[best].value ? i : best), 0);
-  const width = 100 / bars.length;
+  const slot = 100 / bars.length;
+  const barWidth = Math.min(Math.max(slot - GAP, 0.5), MAX_BAR);
   const shown = selected !== null ? bars[selected] : null;
   // A short window can leave one bucket. "Peak" across a single week is the
   // week, and a first and last label that are the same date reads as a range
@@ -90,7 +100,10 @@ export function WeeklyBars({ title, hue, bars, unit, partLabel, empty }: Props) 
       <svg
         viewBox={`0 0 100 ${HEIGHT}`}
         preserveAspectRatio="none"
-        className="h-14 w-full"
+        // Taller as the page gets wider. The viewBox stretches, so at a
+        // 540px column a 56px chart is a 10:1 smear; the bars need height to
+        // read as quantities rather than as a bar code.
+        className="h-16 w-full sm:h-20"
         role="img"
         aria-labelledby={`${id}-t`}
       >
@@ -104,16 +117,17 @@ export function WeeklyBars({ title, hue, bars, unit, partLabel, empty }: Props) 
         {bars.map((b, i) => {
           const h = (b.value / max) * (HEIGHT - 2);
           const partH = b.part === undefined ? 0 : (b.part / max) * (HEIGHT - 2);
-          const x = i * width;
+          const x = i * slot;
+          const barX = x + (slot - barWidth) / 2;
           const on = selected === i;
           return (
             <g key={b.week} onPointerDown={() => setSelected(on ? null : i)}>
               {/* A hit target the width of the slot, not of the mark. */}
-              <rect x={x} y={0} width={width} height={HEIGHT} fill="transparent" />
+              <rect x={x} y={0} width={slot} height={HEIGHT} fill="transparent" />
               <rect
-                x={x + GAP / 2}
+                x={barX}
                 y={HEIGHT - h}
-                width={Math.max(width - GAP, 0.5)}
+                width={barWidth}
                 height={h}
                 rx={0.8}
                 fill={hue}
@@ -121,9 +135,9 @@ export function WeeklyBars({ title, hue, bars, unit, partLabel, empty }: Props) 
               />
               {b.part !== undefined ? (
                 <rect
-                  x={x + GAP / 2}
+                  x={barX}
                   y={HEIGHT - partH}
-                  width={Math.max(width - GAP, 0.5)}
+                  width={barWidth}
                   height={partH}
                   rx={0.8}
                   fill={hue}

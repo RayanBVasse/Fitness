@@ -157,7 +157,7 @@ export function TodayScreen({
   const sessionCalisthenics = calisthenicsEntries.filter((c) => c.session_id === session?.id);
 
   return (
-    <div className="space-y-4 pt-5">
+    <div className="mx-auto max-w-[820px] space-y-4 pt-5">
       {/* Date, day and gym are shown rather than asked for. */}
       <header>
         <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-text-faint">

@@ -53,7 +53,7 @@ export function NotesReview({ notes, counts, months, noteTypes, filters }: Props
   const pendingShown = notes.filter((n) => n.review_status === "pending");
 
   return (
-    <div className="space-y-4 pt-5">
+    <div className="mx-auto max-w-[820px] space-y-4 pt-5">
       <header>
         <h1 className="text-2xl font-bold leading-tight">Context notes</h1>
         <p className="text-sm text-text-dim">

@@ -138,7 +138,7 @@ export function DayEditor({
   }
 
   return (
-    <div className="space-y-4 pt-5">
+    <div className="mx-auto max-w-[820px] space-y-4 pt-5">
       <header className="flex items-baseline justify-between gap-3">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-text-faint">

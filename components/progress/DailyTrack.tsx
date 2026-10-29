@@ -35,8 +35,6 @@ type Props = {
   unit?: string;
 };
 
-const HEIGHT = 56;
-
 export function DailyTrack({ title, hue, from, to, max, points, unit }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -66,8 +64,7 @@ export function DailyTrack({ title, hue, from, to, max, points, unit }: Props) {
           // every track: a gutter that sized itself to its own label would
           // start each chart at a different place, and these are read
           // against each other.
-          className="tnum flex w-10 shrink-0 flex-col justify-between text-right text-[9px] leading-none text-text-faint"
-          style={{ height: HEIGHT }}
+          className="tnum flex h-16 w-10 shrink-0 flex-col justify-between text-right text-[9px] leading-none text-text-faint lg:h-24"
           aria-hidden
         >
           <span>{fmt(max)}</span>
@@ -75,8 +72,7 @@ export function DailyTrack({ title, hue, from, to, max, points, unit }: Props) {
         </div>
 
         <div
-          className="relative flex-1"
-          style={{ height: HEIGHT }}
+          className="relative h-16 flex-1 lg:h-24"
           role="img"
           aria-label={`${title}: ${points
             .map((p) => `${shortDate(p.date)} ${fmt(p.value)}`)

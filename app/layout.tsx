@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { BottomNav } from "@/components/BottomNav";
+import { TopNav } from "@/components/TopNav";
 
 export const metadata: Metadata = {
   title: "Fitness Observatory",
@@ -17,12 +17,23 @@ export const viewport: Viewport = {
   ],
 };
 
+/**
+ * A page, not a phone screen.
+ *
+ * This was built at 520px against a fixed bottom bar, which is where it is
+ * actually read least: the log is kept on a tablet and the analysis on a
+ * desktop. The shell now runs to 1180px — wide enough for two columns of
+ * charts and a table that needs its width, narrow enough that a paragraph
+ * inside a card does not become an unreadable line.
+ */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-GB">
       <body>
-        <main className="mx-auto w-full max-w-[520px] px-4">{children}</main>
-        <BottomNav />
+        <TopNav />
+        <main className="mx-auto w-full max-w-[1180px] px-4 pb-16 sm:px-6 lg:px-8">
+          {children}
+        </main>
       </body>
     </html>
   );

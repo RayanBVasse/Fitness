@@ -129,23 +129,31 @@ export default async function ProgressPage({
         })}
       </div>
 
-      <SnatchProgress data={progress} />
-      <HypertrophyProgress
-        data={progress}
-        regions={reference.muscleRegions}
-        muscleGroups={reference.muscleGroups}
-      />
-      <CalisthenicsProgress data={progress} />
-      <BodyProgress data={progress} />
+      {/* Two columns from `lg`. The panels are the page and each one is
+          tall, so side by side they halve the scroll without squeezing a
+          chart: a 540px column is wider than the whole app used to be.
+          items-start keeps a short card from stretching to match a tall
+          neighbour, and the wide things below span both. */}
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <SnatchProgress data={progress} />
+        <HypertrophyProgress
+          data={progress}
+          regions={reference.muscleRegions}
+          muscleGroups={reference.muscleGroups}
+        />
+        <CalisthenicsProgress data={progress} />
+        <BodyProgress data={progress} />
 
-      {/* After the charts, because it explains them: a month that looks
-          quiet above is usually a month that was written down differently,
-          and this is where that can be read. */}
-      <Coverage data={progress} />
+        {/* After the charts, because it explains them: a month that looks
+            quiet above is usually a month written down differently. Kept to
+            one column — stretched across the page the month sits at one edge
+            and its counts at the other, which is a long way for an eye to
+            carry four numbers. */}
+        <Coverage data={progress} />
 
-      {objective ? (
-        <Card>
-          <SectionTitle>Primary objective</SectionTitle>
+        {objective ? (
+          <Card>
+            <SectionTitle>Primary objective</SectionTitle>
           <p className="text-sm leading-snug">{objective.statement}</p>
           <div className="mt-3 grid grid-cols-3 gap-3">
             <Figure
@@ -166,11 +174,11 @@ export default async function ProgressPage({
             Imported is the Jan–Oct 2026 reconstruction at {primary} kg. It is a starting point,
             never merged with what you log from here.
           </p>
-        </Card>
-      ) : null}
+          </Card>
+        ) : null}
 
-      <Card>
-        <SectionTitle aside="stand / receive">By load</SectionTitle>
+        <Card>
+          <SectionTitle aside="stand / receive">By load</SectionTitle>
         {rows.length === 0 ? (
           <InsufficientData reason="No substantiated snatch blocks yet. Rates appear once a block records both attempts and stands." />
         ) : (
@@ -218,34 +226,36 @@ export default async function ProgressPage({
           with a low stand rate means the catch is no longer the limiter. Percentages appear
           only from {MIN_ATTEMPTS_FOR_RATE} attempts; below that the counts are shown and the
           rate is not, because one lift either way would move it by twenty points.
-        </p>
-      </Card>
-
-      {/* Beside the reviews, because that is where these come from: an
-          outside reader proposes something, and this is where it stops being
-          a sentence in a conversation. */}
-      <Card>
-        <ExperimentRegister experiments={experiments} today={londonToday()} />
-      </Card>
-
-      {/* The weekly reviews touching this window, newest first. The current
-          week always appears, empty or not, so there is somewhere to paste
-          one; the rest are the archive, each still editable. No facts block
-          yet — a week's brief is not seven days concatenated, and inventing
-          one here would make it look like the app had computed the week. */}
-      {progress.weeklyReviews.map(({ week, review }) => (
-        <Card key={week}>
-          <CoachReviewPanel
-            scope="week"
-            periodKey={week}
-            label={`week of ${longDate(week)}`}
-            content={review?.content ?? null}
-            updatedAt={review ? londonTime(review.updated_at) : null}
-            canWrite
-          />
+          </p>
         </Card>
-      ))}
 
+        {/* Beside the reviews, because that is where these come from: an
+            outside reader proposes something, and this is where it stops
+            being a sentence in a conversation. A column, not the page: a
+            text field run to 1100px is harder to write in, not easier. */}
+        <Card>
+          <ExperimentRegister experiments={experiments} today={londonToday()} />
+        </Card>
+
+        {/* The weekly reviews touching this window, newest first. The
+            current week always appears, empty or not, so there is somewhere
+            to paste one; the rest are the archive, each still editable. No
+            facts block yet — a week's brief is not seven days concatenated,
+            and inventing one here would make it look like the app had
+            computed the week. */}
+        {progress.weeklyReviews.map(({ week, review }) => (
+          <Card key={week} className="lg:col-span-2">
+            <CoachReviewPanel
+              scope="week"
+              periodKey={week}
+              label={`week of ${longDate(week)}`}
+              content={review?.content ?? null}
+              updatedAt={review ? londonTime(review.updated_at) : null}
+              canWrite
+            />
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

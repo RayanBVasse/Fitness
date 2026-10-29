@@ -26,7 +26,7 @@ export default async function SettingsPage() {
   const themes = rows.find((r) => r.key === "weekday_themes");
 
   return (
-    <div className="space-y-4 pt-5">
+    <div className="mx-auto max-w-[820px] space-y-4 pt-5">
       <header>
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="text-sm text-text-dim">Libraries, rules and guardrails.</p>
