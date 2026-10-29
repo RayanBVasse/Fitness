@@ -814,12 +814,16 @@ export async function getExperiments(): Promise<Experiment[]> {
  * ones a body question is asked of. Bodyweight and waist are measurements of
  * a different kind and belong with a trend, not with how sore you were.
  */
-const RECOVERY_METRICS: { slug: string; label: string; max: number }[] = [
+const RECOVERY_METRICS: { slug: string; label: string; max: number | null }[] = [
   { slug: "soreness", label: "Soreness", max: 10 },
   { slug: "fatigue", label: "Fatigue", max: 10 },
   { slug: "readiness", label: "Readiness", max: 10 },
   { slug: "sleep_quality", label: "Sleep quality", max: 10 },
   { slug: "sleep_duration", label: "Sleep", max: 14 },
+  // Null: a step count has no ceiling worth drawing to, and a fixed one
+  // would either clip a big day or squash every ordinary one into the floor.
+  // Scaled to the window instead, which is why the axis is labelled.
+  { slug: "steps", label: "Steps", max: null },
 ];
 
 /** One logged row, as the drill-down reads it. */
@@ -960,6 +964,7 @@ export interface ProgressData {
     recovery: {
       slug: string;
       label: string;
+      /** The top of the axis, rounded up from the window where unbounded. */
       max: number;
       days: { date: string; value: number }[];
     }[];
@@ -1338,12 +1343,19 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
         label: i.label,
         days: (siteDays.get(i.id) ?? []).sort((a, b) => (a.date < b.date ? -1 : 1)),
       })),
-    recovery: RECOVERY_METRICS.map((m) => ({
-      ...m,
-      days: (recoveryRows.data ?? [])
+    recovery: RECOVERY_METRICS.map((m) => {
+      const days = (recoveryRows.data ?? [])
         .filter((r) => r.metric === m.slug && r.value_numeric != null)
-        .map((r) => ({ date: r.metric_date, value: Number(r.value_numeric) })),
-    })).filter((m) => m.days.length > 0),
+        .map((r) => ({ date: r.metric_date, value: Number(r.value_numeric) }));
+      return {
+        slug: m.slug,
+        label: m.label,
+        // An unbounded dimension takes its ceiling from the window, rounded
+        // up so the biggest day is a mark rather than the axis itself.
+        max: m.max ?? roundUpScale(days.map((d) => d.value)),
+        days,
+      };
+    }).filter((m) => m.days.length > 0),
   };
 
   // --- how much is behind all of it ----------------------------------------
@@ -1496,6 +1508,22 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
     weeklyReviews,
     error: snatchWeekly.error ?? sets.error ?? entries.error,
   };
+}
+
+/**
+ * A round number comfortably above the biggest value.
+ *
+ * 1, 2 or 5 times a power of ten, so the axis reads as a round figure rather
+ * than as the maximum plus a bit — a top of 18,400 looks like a measurement
+ * and is not one.
+ */
+function roundUpScale(values: number[]): number {
+  const top = Math.max(...values, 1);
+  const magnitude = Math.pow(10, Math.floor(Math.log10(top)));
+  for (const step of [1, 2, 5, 10]) {
+    if (top <= step * magnitude) return step * magnitude;
+  }
+  return 10 * magnitude;
 }
 
 /** Monday of the ISO week, matching fitness.week_start. */

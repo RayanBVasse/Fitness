@@ -57,8 +57,8 @@ export function DailyTrack({ title, hue, from, to, max, points, unit }: Props) {
         <span className="text-[11px] font-semibold">{title}</span>
         <span className="ml-auto shrink-0 whitespace-nowrap text-[11px] font-normal text-text-dim">
           {shown
-            ? `${shortDate(shown.date)} · ${shown.label ?? `${shown.value}${unit ?? ""}`}`
-            : `${Math.min(...values)}–${Math.max(...values)}${unit ?? ""} over ${points.length} day${
+            ? `${shortDate(shown.date)} · ${shown.label ?? `${fmt(shown.value)}${unit ?? ""}`}`
+            : `${fmt(Math.min(...values))}–${fmt(Math.max(...values))}${unit ?? ""} over ${points.length} day${
                 points.length === 1 ? "" : "s"
               }`}
         </span>
@@ -66,11 +66,15 @@ export function DailyTrack({ title, hue, from, to, max, points, unit }: Props) {
 
       <div className="flex gap-1.5">
         <div
-          className="tnum flex w-4 shrink-0 flex-col justify-between text-right text-[9px] leading-none text-text-faint"
+          // Wide enough for a five-figure step count, and the same width on
+          // every track: a gutter that sized itself to its own label would
+          // start each chart at a different place, and these are read
+          // against each other.
+          className="tnum flex w-10 shrink-0 flex-col justify-between text-right text-[9px] leading-none text-text-faint"
           style={{ height: HEIGHT }}
           aria-hidden
         >
-          <span>{max}</span>
+          <span>{fmt(max)}</span>
           <span>0</span>
         </div>
 
@@ -79,7 +83,7 @@ export function DailyTrack({ title, hue, from, to, max, points, unit }: Props) {
           style={{ height: HEIGHT }}
           role="img"
           aria-label={`${title}: ${points
-            .map((p) => `${shortDate(p.date)} ${p.label ?? p.value}`)
+            .map((p) => `${shortDate(p.date)} ${p.label ?? fmt(p.value)}`)
             .join("; ")}`}
         >
           {[0, max].map((v) => (
@@ -99,7 +103,7 @@ export function DailyTrack({ title, hue, from, to, max, points, unit }: Props) {
                 key={p.date}
                 type="button"
                 onClick={() => setSelected(on ? null : p.date)}
-                aria-label={`${shortDate(p.date)}, ${p.label ?? p.value}`}
+                aria-label={`${shortDate(p.date)}, ${p.label ?? fmt(p.value)}`}
                 className="absolute top-0 h-full -translate-x-1/2"
                 style={{ left: `${left}%`, width: 22 }}
               >
@@ -122,12 +126,31 @@ export function DailyTrack({ title, hue, from, to, max, points, unit }: Props) {
         </div>
       </div>
 
-      <div className="ml-[22px] mt-1 flex justify-between text-[10px] text-text-dim">
+      <div className="ml-[46px] mt-1 flex justify-between text-[10px] text-text-dim">
         <span className="tnum">{shortDate(from)}</span>
         <span className="tnum">{shortDate(to)}</span>
       </div>
     </div>
   );
+}
+
+/**
+ * Four figures and up get separators; everything else is left alone.
+ *
+ * At a thousand rather than ten thousand, so one chart cannot show 4312
+ * beside 18,400 — a scale that punctuates some of its numbers and not
+ * others reads as two different quantities.
+ *
+ * Spelled out rather than left to toLocaleString, for the reason the month
+ * names are: the server and the browser can disagree about a locale, and a
+ * label that differs between them fails hydration.
+ */
+function fmt(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  if (Math.abs(rounded) < 1000) return String(rounded);
+  const [whole, fraction] = String(rounded).split(".");
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return fraction ? `${grouped}.${fraction}` : grouped;
 }
 
 function days(from: string, to: string): number {

@@ -364,6 +364,12 @@ export function CalisthenicsProgress({ data }: { data: ProgressData }) {
   );
 }
 
+/** How each daily dimension reads. Everything else is a 0-10 judgement. */
+const UNITS: Record<string, string> = {
+  sleep_duration: "h",
+  steps: "",
+};
+
 /**
  * The body: one topic covering the sites being tracked and the daily
  * dimensions that describe how recovered you are.
@@ -436,7 +442,7 @@ export function BodyProgress({ data }: { data: ProgressData }) {
               from={from}
               to={data.to}
               max={m.max}
-              unit={m.slug === "sleep_duration" ? "h" : "/10"}
+              unit={UNITS[m.slug] ?? "/10"}
               points={m.days.map((d) => ({ date: d.date, value: d.value }))}
             />
           ))}
