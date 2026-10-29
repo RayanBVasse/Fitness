@@ -15,6 +15,12 @@
  * lightness. That is reported, not enforced. Nothing in the app asks you to
  * tell two of them apart to read a number — every stripe and chip is labelled.
  *
+ * The workstreams are now a family in that same sense. On the 2c palette
+ * snatch 230 and hypertrophy 292 measure dE 4.7 deutan in light and 1.1 in
+ * dark, chosen knowingly: the three are told apart by the names printed on
+ * every tile, tab and chip that carries one. The numbers below are the
+ * record of that trade, not a target anyone is trying to hit.
+ *
  * Keep the tables below in step with globals.css when a token changes.
  */
 
@@ -24,14 +30,14 @@ const CHIP_TINT = 0.08;
 const MIN_CONTRAST = 4.5;
 
 const LIGHT = {
-  ws_snatch: [0.5, 0.085, 220], ws_calisthenics: [0.48, 0.12, 150], ws_hypertrophy: [0.52, 0.13, 320],
+  ws_snatch: [0.52, 0.18, 230], ws_calisthenics: [0.52, 0.18, 150], ws_hypertrophy: [0.52, 0.18, 292],
   shoulders: [0.52, 0.13, 28], chest: [0.46, 0.13, 28], triceps: [0.4, 0.12, 28],
   lats: [0.5, 0.13, 255], mid_back: [0.45, 0.13, 255], biceps: [0.4, 0.13, 255],
   calves: [0.49, 0.13, 145], hamstrings: [0.445, 0.13, 145], quads: [0.4, 0.12, 145],
   glutes: [0.355, 0.11, 145], core: [0.5, 0.1, 90],
 };
 const DARK = {
-  ws_snatch: [0.74, 0.13, 220], ws_calisthenics: [0.74, 0.13, 150], ws_hypertrophy: [0.74, 0.13, 320],
+  ws_snatch: [0.75, 0.17, 230], ws_calisthenics: [0.75, 0.17, 150], ws_hypertrophy: [0.75, 0.17, 292],
   shoulders: [0.77, 0.13, 28], chest: [0.71, 0.13, 28], triceps: [0.67, 0.13, 28],
   lats: [0.74, 0.12, 255], mid_back: [0.69, 0.13, 255], biceps: [0.65, 0.13, 255],
   calves: [0.83, 0.13, 145], hamstrings: [0.77, 0.13, 145], quads: [0.71, 0.13, 145],
@@ -41,7 +47,9 @@ const FAMILIES = {
   red: ["shoulders", "chest", "triceps"],
   blue: ["lats", "mid_back", "biceps"],
   green: ["calves", "hamstrings", "quads", "glutes"],
-  workstream: ["ws_snatch", "ws_calisthenics", "ws_hypertrophy"],
+  // Ordered so the close pair is adjacent: the walk compares consecutive
+  // members, and snatch against hypertrophy is the comparison that matters.
+  workstream: ["ws_snatch", "ws_hypertrophy", "ws_calisthenics"],
 };
 
 // --- colour maths ----------------------------------------------------------

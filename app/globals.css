@@ -17,14 +17,37 @@
   --accent: #1f6feb;
   --accent-text: #ffffff;
 
-  /* Darkened from #157f3d: as the Success button's label on --stood-bg it
-     measured 4.44, and 16px bold is not large text. */
-  --stood: #13763a;
-  --stood-bg: #e3f4e8;
-  --caught: #a86300;
-  --caught-bg: #fdf0da;
-  --missed: #b3261e;
-  --missed-bg: #fce9e7;
+  /* Outcomes on the 2c recipe: solid L .52 C .18, fg L .42 C .17, tint
+     L .95 C .05. Hues unchanged — stood 145, caught 75, missed 25. */
+  --oc-stood:       oklch(0.52 0.18 145);
+  --oc-stood-fg:    oklch(0.42 0.17 145);
+  --oc-stood-tint:  oklch(0.95 0.05 145);
+  --oc-caught:      oklch(0.52 0.18 75);
+  --oc-caught-fg:   oklch(0.42 0.17 75);
+  --oc-caught-tint: oklch(0.95 0.05 75);
+  --oc-missed:      oklch(0.52 0.18 25);
+  --oc-missed-fg:   oklch(0.42 0.17 25);
+  --oc-missed-tint: oklch(0.95 0.05 25);
+
+  /* The old names, derived rather than duplicated: 58 call sites use these
+     and a colour pass is no reason to touch every one of them. */
+  --stood: var(--oc-stood);
+  --stood-bg: var(--oc-stood-tint);
+  --caught: var(--oc-caught);
+  --caught-bg: var(--oc-caught-tint);
+  --missed: var(--oc-missed);
+  --missed-bg: var(--oc-missed-tint);
+
+  /* Sticky notes keep their ink in both themes. A yellow note that goes
+     dark-on-dark stops reading as a note. */
+  --note-bg: #fff5c2;
+  --note-border: #eedd85;
+  --note-ink: #3a3216;
+  --note-ink-dim: #76662a;
+  --margin-bg: #efeee8;
+  /* A tile's footer pills sit on the tile's own tint, so they need a lift
+     off it rather than a colour of their own. */
+  --tile-pill-bg: #ffffff;
 
   --radius: 14px;
 }
@@ -42,12 +65,22 @@
     --accent: #4d8dfd;
     --accent-text: #0c0c0f;
 
-    --stood: #4ddc83;
-    --stood-bg: #13301e;
-    --caught: #f3b84a;
-    --caught-bg: #332507;
-    --missed: #ff7a70;
-    --missed-bg: #351715;
+    --oc-stood:       oklch(0.75 0.17 145);
+    --oc-stood-fg:    oklch(0.82 0.15 145);
+    --oc-stood-tint:  oklch(0.75 0.17 145 / .14);
+    --oc-caught:      oklch(0.75 0.17 75);
+    --oc-caught-fg:   oklch(0.82 0.15 75);
+    --oc-caught-tint: oklch(0.75 0.17 75 / .14);
+    --oc-missed:      oklch(0.75 0.17 25);
+    --oc-missed-fg:   oklch(0.82 0.15 25);
+    --oc-missed-tint: oklch(0.75 0.17 25 / .14);
+
+    --note-bg: #efe3a6;
+    --note-border: #d6c56e;
+    --note-ink: #29230d;
+    --note-ink-dim: #6a5b20;
+    --margin-bg: #121216;
+    --tile-pill-bg: rgb(255 255 255 / .06);
   }
 }
 
@@ -63,12 +96,22 @@
   --accent: #4d8dfd;
   --accent-text: #0c0c0f;
 
-  --stood: #4ddc83;
-  --stood-bg: #13301e;
-  --caught: #f3b84a;
-  --caught-bg: #332507;
-  --missed: #ff7a70;
-  --missed-bg: #351715;
+  --oc-stood:       oklch(0.75 0.17 145);
+  --oc-stood-fg:    oklch(0.82 0.15 145);
+  --oc-stood-tint:  oklch(0.75 0.17 145 / .14);
+  --oc-caught:      oklch(0.75 0.17 75);
+  --oc-caught-fg:   oklch(0.82 0.15 75);
+  --oc-caught-tint: oklch(0.75 0.17 75 / .14);
+  --oc-missed:      oklch(0.75 0.17 25);
+  --oc-missed-fg:   oklch(0.82 0.15 25);
+  --oc-missed-tint: oklch(0.75 0.17 25 / .14);
+
+  --note-bg: #efe3a6;
+  --note-border: #d6c56e;
+  --note-ink: #29230d;
+  --note-ink-dim: #6a5b20;
+  --margin-bg: #121216;
+  --tile-pill-bg: rgb(255 255 255 / .06);
 }
 
 
@@ -98,9 +141,25 @@
   tell two of these apart to read a number.
 */
 :root {
-  --ws-snatch:       oklch(0.50 0.085 220);
-  --ws-calisthenics: oklch(0.48 0.12 150);
-  --ws-hypertrophy:  oklch(0.52 0.13 320);
+  /* Workstreams on the 2c recipe. These hues were chosen knowingly: snatch
+     230 against hypertrophy 292 measures dE 4.7 deutan in light and 1.1 in
+     dark, under the 8 floor — so the two are told apart by their written
+     names, never by colour alone. Every tile, tab and chip carrying one is
+     labelled, which is the condition that makes it legible. */
+  --ws-snatch:            oklch(0.52 0.18 230);
+  --ws-snatch-fg:         oklch(0.42 0.17 230);
+  --ws-snatch-tint:       oklch(0.92 0.07 230);
+  --ws-snatch-line:       oklch(0.74 0.14 230);
+
+  --ws-hypertrophy:       oklch(0.52 0.18 292);
+  --ws-hypertrophy-fg:    oklch(0.42 0.17 292);
+  --ws-hypertrophy-tint:  oklch(0.92 0.07 292);
+  --ws-hypertrophy-line:  oklch(0.74 0.14 292);
+
+  --ws-calisthenics:      oklch(0.52 0.18 150);
+  --ws-calisthenics-fg:   oklch(0.42 0.17 150);
+  --ws-calisthenics-tint: oklch(0.92 0.07 150);
+  --ws-calisthenics-line: oklch(0.74 0.14 150);
 
   /* Family = hue; muscle = a lightness step inside it. */
   --mg-shoulders:  oklch(0.52 0.13 28);
@@ -118,9 +177,20 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --ws-snatch:       oklch(0.74 0.13 220);
-    --ws-calisthenics: oklch(0.74 0.13 150);
-    --ws-hypertrophy:  oklch(0.74 0.13 320);
+    --ws-snatch:            oklch(0.75 0.17 230);
+    --ws-snatch-fg:         oklch(0.82 0.15 230);
+    --ws-snatch-tint:       oklch(0.72 0.16 230 / .20);
+    --ws-snatch-line:       oklch(0.75 0.16 230 / .60);
+
+    --ws-hypertrophy:       oklch(0.75 0.17 292);
+    --ws-hypertrophy-fg:    oklch(0.82 0.15 292);
+    --ws-hypertrophy-tint:  oklch(0.72 0.16 292 / .20);
+    --ws-hypertrophy-line:  oklch(0.75 0.16 292 / .60);
+
+    --ws-calisthenics:      oklch(0.75 0.17 150);
+    --ws-calisthenics-fg:   oklch(0.82 0.15 150);
+    --ws-calisthenics-tint: oklch(0.72 0.16 150 / .20);
+    --ws-calisthenics-line: oklch(0.75 0.16 150 / .60);
 
     --mg-shoulders:  oklch(0.77 0.13 28);
     --mg-chest:      oklch(0.71 0.13 28);
@@ -137,9 +207,20 @@
 }
 
 :root[data-theme="dark"] {
-    --ws-snatch:       oklch(0.74 0.13 220);
-    --ws-calisthenics: oklch(0.74 0.13 150);
-    --ws-hypertrophy:  oklch(0.74 0.13 320);
+    --ws-snatch:            oklch(0.75 0.17 230);
+    --ws-snatch-fg:         oklch(0.82 0.15 230);
+    --ws-snatch-tint:       oklch(0.72 0.16 230 / .20);
+    --ws-snatch-line:       oklch(0.75 0.16 230 / .60);
+
+    --ws-hypertrophy:       oklch(0.75 0.17 292);
+    --ws-hypertrophy-fg:    oklch(0.82 0.15 292);
+    --ws-hypertrophy-tint:  oklch(0.72 0.16 292 / .20);
+    --ws-hypertrophy-line:  oklch(0.75 0.16 292 / .60);
+
+    --ws-calisthenics:      oklch(0.75 0.17 150);
+    --ws-calisthenics-fg:   oklch(0.82 0.15 150);
+    --ws-calisthenics-tint: oklch(0.72 0.16 150 / .20);
+    --ws-calisthenics-line: oklch(0.75 0.16 150 / .60);
 
     --mg-shoulders:  oklch(0.77 0.13 28);
     --mg-chest:      oklch(0.71 0.13 28);
