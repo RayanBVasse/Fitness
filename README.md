@@ -38,6 +38,15 @@ Unknown equipment context is explicitly marked as unverified for comparison.
 Longer windows retain the weekly charts. Preceding-seven-day comparison is not yet
 implemented.
 
+The daily overview uses stacked snatch bars with a working-load selector, recovery
+plots with gaps at missing readings, and compact set-dose bars. Outcome tiles retain
+their counts and use symbols as well as colour; incomplete observations stay neutral.
+Calisthenics has separate Quality and Success views. Quality arrows show the numeric
+difference between single recorded ratings of the same variation and assistance,
+not an established trend. Exercise sets live in the day inspector and exercise
+drill-down. Repetition plots require a known recorded setup, matched load and at
+least two observed dates; drop sets are excluded from those plots.
+
 1. **Run the migrations** in the Supabase SQL editor, in order:
    - `supabase/migrations/0001_init.sql`
    - `supabase/migrations/0002_seed.sql`

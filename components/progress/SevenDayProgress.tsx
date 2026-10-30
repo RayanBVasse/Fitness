@@ -1,134 +1,136 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { snatchCounts, skillResult, type DailyProgressData } from "@/lib/dailyProgress";
-import type { AssistanceType, CalisthenicsAttempt, Exercise, Gym, HypertrophySet, SkillVariation } from "@/lib/types";
+import { exerciseSetups, matchedReps, outcomeTone, OUTCOME_MARKS, qualityChange, trainingDose, type ExerciseSetup, type OutcomeTone } from "@/lib/progressPresentation";
+import type { AssistanceType, CalisthenicsAttempt, Exercise, Gym, HypertrophySet, MuscleGroup, MuscleRegion, SkillVariation } from "@/lib/types";
 import { longDate, weekdayName } from "@/lib/time";
 import { MIN_ATTEMPTS_FOR_RATE } from "@/components/ui";
+import { RecoveryPlot, RepetitionPlot } from "./DailyPlots";
 import styles from "./SevenDayProgress.module.css";
 
 type Props = {
-  data: DailyProgressData;
-  attempts: CalisthenicsAttempt[];
-  exercises: Exercise[];
-  gyms: Gym[];
-  variations: SkillVariation[];
-  assistance: AssistanceType[];
+  data: DailyProgressData; attempts: CalisthenicsAttempt[]; exercises: Exercise[]; gyms: Gym[];
+  variations: SkillVariation[]; assistance: AssistanceType[]; muscleGroups: MuscleGroup[]; regions: MuscleRegion[];
 };
-
 const RECOVERY = [
-  { slug: "fatigue", label: "Fatigue", unit: "/10" },
-  { slug: "soreness", label: "Soreness", unit: "/10" },
-  { slug: "readiness", label: "Readiness", unit: "/10" },
-  { slug: "sleep_quality", label: "Sleep quality", unit: "/10" },
-  { slug: "sleep_duration", label: "Sleep", unit: " h" },
+  { slug: "fatigue", label: "Fatigue", unit: "/10" }, { slug: "soreness", label: "Soreness", unit: "/10" },
+  { slug: "readiness", label: "Readiness", unit: "/10" }, { slug: "sleep_quality", label: "Sleep quality", unit: "/10" }, { slug: "sleep_duration", label: "Sleep", unit: " h" },
 ];
-
-function dateLabel(date: string) { return `${weekdayName(date).slice(0, 3)} ${Number(date.slice(8))}`; }
+const dateLabel = (date: string) => `${weekdayName(date).slice(0, 3)} ${Number(date.slice(8))}`;
+const metric = (day: DailyProgressData["days"][number], slug: string) => day.metrics.find(m => m.metric === slug)?.value_numeric ?? null;
+const toneClass: Record<OutcomeTone, string> = { all: styles.outcomeAll, partial: styles.outcomePartial, none: styles.outcomeNone, unknown: styles.outcomeUnknown };
 function Missing({ children = "—" }: { children?: ReactNode }) { return <span className={styles.missing} title="Not recorded; not zero">{children}</span>; }
-function setsLabel(sets: HypertrophySet[]) {
-  return sets.map(s => `${s.sets_count} × ${s.reps ?? "?"} @ ${s.load_kg ?? "?"} kg${s.rir == null ? " · RIR ?" : ` · RIR ${s.rir}`}${s.is_drop ? " · drop" : ""}`).join("; ");
-}
+function setsLabel(sets: HypertrophySet[]) { return sets.map(s => `${s.sets_count} × ${s.reps ?? "?"} @ ${s.load_kg ?? "?"} kg · RIR ${s.rir ?? "?"}${s.is_drop ? " · drop" : ""}`).join("; "); }
 
-export function SevenDayProgress({ data, attempts, exercises, gyms, variations, assistance }: Props) {
+export function SevenDayProgress({ data, attempts, exercises, gyms, variations, assistance, muscleGroups, regions }: Props) {
   const { days } = data;
-  const [selected, setSelected] = useState(days.findLast(d => d.status === "Trained")?.date ?? days[6].date);
-  const day = days.find(d => d.date === selected)!;
-  const full = snatchCounts(days.flatMap(d => d.snatch));
-  const totalSets = days.reduce((n, d) => n + d.sets.reduce((s, r) => s + r.sets_count, 0), 0);
-  const skillEntries = days.reduce((n, d) => n + d.skills.length, 0);
-  const fatigue = days.flatMap(d => {
-    const value = d.metrics.find(m => m.metric === "fatigue")?.value_numeric;
-    return value == null ? [] : [{ date: d.date, value }];
-  });
-  const maxAttempts = Math.max(1, ...days.map(d => d.counts.attempts));
   const loads = [...new Set(days.flatMap(d => d.snatch.map(b => b.weight_kg)).filter((v): v is number => v != null))].sort((a, b) => a - b);
-  const setups = new Map<string, { label: string; byDate: Map<string, HypertrophySet[]>; identified: boolean }>();
-  for (const d of days) for (const set of d.sets) {
-    const session = d.sessions.find(s => s.id === set.session_id);
-    const gym = session?.gym_id != null ? gyms.find(g => g.id === session.gym_id)?.name ?? `Gym ${session.gym_id}` : session?.gym_custom_label;
-    const key = JSON.stringify([set.exercise_id, session?.gym_id, session?.gym_custom_label, set.machine_label, set.side]);
-    const setup = setups.get(key) ?? {
-      label: `${exercises.find(e => e.id === set.exercise_id)?.name ?? `Exercise ${set.exercise_id}`} · ${gym ?? "gym unrecorded"} · ${set.machine_label ?? "equipment unrecorded"} · ${set.side}`,
-      byDate: new Map<string, HypertrophySet[]>(), identified: Boolean(gym && set.machine_label),
-    };
-    setup.byDate.set(d.date, [...(setup.byDate.get(d.date) ?? []), set]);
-    setups.set(key, setup);
-  }
+  const [selected, setSelected] = useState(days.findLast(d => d.status === "Trained")?.date ?? days[6].date);
+  const [loadFilter, setLoadFilter] = useState(loads.includes(45) ? "45" : "all");
+  const [skillMode, setSkillMode] = useState<"quality" | "success">("quality");
+  const day = days.find(d => d.date === selected) ?? days[6];
+  const selectedDate = day.date;
+  const activeLoad = loadFilter === "all" || !loads.includes(Number(loadFilter)) ? null : Number(loadFilter);
+  const snatchLabel = activeLoad == null ? "All working loads" : `${activeLoad} kg`;
+  const counts = days.map(d => snatchCounts(d.snatch.filter(b => activeLoad == null || b.weight_kg === activeLoad)));
+  const maxAttempts = Math.max(1, ...counts.map(c => c.attempts));
+  const selectedCounts = counts[days.indexOf(day)];
+  const doses = days.map(d => trainingDose(d.sets, exercises, muscleGroups, regions));
+  const selectedDose = doses[days.indexOf(day)];
+  const maxDose = Math.max(1, ...doses.map(d => d.count));
+  const full = snatchCounts(days.flatMap(d => d.snatch));
+  const totalSets = doses.reduce((n, d) => n + d.count, 0);
+  const skillEntries = days.reduce((n, d) => n + d.skills.length, 0);
+  const fatigue = days.flatMap(d => metric(d, "fatigue") == null ? [] : [{ date: d.date, value: metric(d, "fatigue")! }]);
+  const setups = exerciseSetups(days, exercises, gyms);
   const skills = new Map<string, { label: string; variationId: number; assistanceId: number | null }>();
-  for (const d of days) for (const entry of d.skills) {
-    const label = variations.find(v => v.id === entry.skill_variation_id)?.name ?? `Skill ${entry.skill_variation_id}`;
-    skills.set(`${entry.skill_variation_id}-${entry.assistance_id}`, {
-      label: `${label} · ${assistance.find(a => a.id === entry.assistance_id)?.name ?? "assistance unrecorded"}`,
-      variationId: entry.skill_variation_id, assistanceId: entry.assistance_id,
-    });
+  for (const d of days) for (const e of d.skills) {
+    const name = variations.find(v => v.id === e.skill_variation_id)?.name ?? `Skill ${e.skill_variation_id}`;
+    skills.set(`${e.skill_variation_id}-${e.assistance_id}`, { label: `${name} · ${assistance.find(a => a.id === e.assistance_id)?.name ?? "assistance unrecorded"}`, variationId: e.skill_variation_id, assistanceId: e.assistance_id });
   }
-  const dateHeads = <tr><th scope="col">Observation</th>{days.map(d => <th scope="col" key={d.date} className={d.date === selected ? styles.selectedCell : undefined}><button type="button" onClick={() => setSelected(d.date)} aria-pressed={d.date === selected}>{dateLabel(d.date)}</button></th>)}</tr>;
-  const cellClass = (date: string) => date === selected ? styles.selectedCell : undefined;
+  const dateHeads = (label: string) => <tr><th scope="col">{label}</th>{days.map(d => <th scope="col" key={d.date}><button type="button" onClick={() => setSelected(d.date)} aria-pressed={d.date === selectedDate}>{weekdayName(d.date).slice(0, 3)}<span>{Number(d.date.slice(8))}</span></button></th>)}</tr>;
 
   return <section className={styles.dashboard} aria-label="Seven-day daily progress">
-    <div className={styles.windowHeading}>
-      <div><h2>{longDate(days[0].date)} – {longDate(days[6].date)}</h2><p>Seven-day window · daily resolution · logged observations</p></div>
-      <span className={styles.badge}>{days.filter(d => d.status === "Trained").length} training days recorded</span>
-    </div>
+    <div className={styles.windowHeading}><div><h2>{longDate(days[0].date)} – {longDate(days[6].date)}</h2><p>Seven-day window · daily resolution · logged observations</p></div><span className={styles.badge}>{days.filter(d => d.status === "Trained").length} training days recorded</span></div>
     <div className={styles.stats}>
-      <Stat label="Full snatch · working lifts" value={full.complete ? `${full.stood}/${full.attempts}` : "—"} hint={full.unknown ? `${full.unknown} blocks have incomplete counts` : full.attempts >= MIN_ATTEMPTS_FOR_RATE ? `${Math.round(full.stood / full.attempts * 100)}% stood · counts below by load` : "Too few attempts for a rate"} />
-      <Stat label="Hypertrophy dose" value={totalSets || "—"} hint={totalSets ? "recorded sets · performance below" : "No sets recorded"} />
-      <Stat label="Calisthenics" value={skillEntries || "—"} hint={skillEntries ? "skill entries · quality below" : "No skill entries recorded"} />
+      <Stat label="Full snatch · working lifts" value={full.complete ? `${full.stood}/${full.attempts}` : "—"} hint={full.unknown ? `${full.unknown} incomplete blocks excluded` : full.attempts >= MIN_ATTEMPTS_FOR_RATE ? `${Math.round(full.stood / full.attempts * 100)}% stood · inspect by load below` : "Too few attempts for a rate"} />
+      <Stat label="Hypertrophy dose" value={totalSets || "—"} hint={totalSets ? "sets · exercise comparisons on demand" : "No sets recorded"} />
+      <Stat label="Calisthenics" value={skillEntries || "—"} hint={skillEntries ? "entries · quality and success kept separate" : "No skill entries recorded"} />
       <Stat label="Reported fatigue" value={fatigue.length > 1 ? `${fatigue[0].value} → ${fatigue.at(-1)!.value}` : fatigue.length ? `${fatigue[0].value}/10` : "—"} hint={fatigue.length ? `${dateLabel(fatigue[0].date)}${fatigue.length > 1 ? ` to ${dateLabel(fatigue.at(-1)!.date)}` : ""} · ${fatigue.length}/7 days rated` : "Unrecorded · not zero"} />
     </div>
-
-    <div><h3 className={styles.glanceTitle}>Week at a glance</h3><p className={styles.hint}>Select a date to inspect all four workstreams together.</p>
-      <div className={styles.dateScroll}><div className={styles.dateStrip}>{days.map(d => <button type="button" key={d.date} onClick={() => setSelected(d.date)} aria-pressed={selected === d.date} aria-controls="daily-performance" className={selected === d.date ? styles.dateSelected : undefined}>
-        <strong>{dateLabel(d.date)}</strong><span>{d.status}</span>
-      </button>)}</div></div>
-    </div>
-
-    <section id="daily-performance" className={styles.inspector} aria-label="Selected day performance" aria-live="polite" aria-atomic="true">
-      <div className={styles.windowHeading}><h3>{dateLabel(day.date)} · {day.status}</h3><Link href={`/day/${day.date}`}>Open day record →</Link></div>
-      <div className={styles.inspectorGrid}>
-        <div><h4>Snatch</h4>{day.snatch.length ? <><p>{day.counts.complete ? `${day.counts.stood}/${day.counts.attempts} stood in counted working lifts` : "Attempts / outcomes incomplete"}{day.counts.unknown ? ` · ${day.counts.unknown} incomplete blocks` : ""}</p>{loads.map(load => { const blocks = day.snatch.filter(b => b.weight_kg === load); const n = snatchCounts(blocks); return blocks.length ? <p key={load}>{load} kg: {n.complete ? `${n.stood}/${n.attempts}` : "counts ?"} · quality {blocks.map(b => b.quality_10 ?? "?").join(", ")}/10{n.unknown ? " · incomplete counts" : ""}</p> : null; })}</> : <Missing>No working full snatch recorded</Missing>}</div>
-        <div><h4>Hypertrophy</h4>{day.sets.length ? [...setups.entries()].filter(([, s]) => s.byDate.has(day.date)).map(([key, s]) => <p key={key}><strong>{s.label}</strong><br />{setsLabel(s.byDate.get(day.date)!)}</p>) : <Missing>No sets recorded</Missing>}</div>
-        <div><h4>Calisthenics</h4>{day.skills.length ? day.skills.map(e => { const r = skillResult(e, attempts); return <p key={e.id}>{variations.find(v => v.id === e.skill_variation_id)?.name ?? "Skill"}: quality {e.quality_10 ?? "?"}/10 · {r.successes ?? "?"}/{r.attempts ?? "?"} successful{r.unjudged ? ` · ${r.unjudged} unjudged` : ""} · hold {e.best_hold_seconds ?? "?"} s</p>; }) : <Missing>No skill entries recorded</Missing>}</div>
-        <div><h4>Recovery</h4>{RECOVERY.map(m => { const v = day.metrics.find(r => r.metric === m.slug)?.value_numeric; return <p key={m.slug}>{m.label}: {v == null ? <Missing>unrecorded</Missing> : `${v}${m.unit}`}</p>; })}</div>
-      </div>
-      {day.dayNotes || day.notes.length ? <details key={day.date} className={styles.notes}><summary>Reported context · expand notes</summary>{day.dayNotes ? <p>{day.dayNotes}</p> : null}{day.notes.map((n, i) => <p key={i}>{n}</p>)}</details> : <p className={styles.hint}>No daily context notes recorded.</p>}
+    <div><h3 className={styles.glanceTitle}>Week at a glance</h3><div className={styles.dateScroll}><div className={styles.dateStrip}>{days.map((d, i) => <button type="button" key={d.date} onClick={() => setSelected(d.date)} aria-pressed={selectedDate === d.date} aria-controls="daily-performance"><strong>{dateLabel(d.date)}</strong><span title={doses[i].detail}>{d.status === "Trained" && doses[i].count ? doses[i].label : d.status}</span></button>)}</div></div></div>
+    <section id="daily-performance" className={styles.inspector} aria-label="Selected day performance">
+      <p className={styles.readout} aria-live="polite" aria-atomic="true"><strong>{dateLabel(day.date)} · {day.status}</strong><span>Snatch {snatchLabel.toLowerCase()}: {selectedCounts.complete ? `${selectedCounts.stood}/${selectedCounts.attempts} stood` : selectedCounts.unknown ? "counts incomplete" : "no observation"}{selectedCounts.unknown && selectedCounts.complete ? " *" : ""}</span><span>{selectedDose.count ? `${selectedDose.count} sets · ${selectedDose.label}` : "No hypertrophy sets recorded"}</span><span>{day.skills.length ? `${day.skills.length} skill entries` : "No skill entries recorded"}</span><span>Fatigue: {metric(day, "fatigue") == null ? "unrecorded" : `${metric(day, "fatigue")}/10`}</span></p>
+      <details key={day.date} className={styles.dayDetails}><summary>Inspect performance and recovery · {dateLabel(day.date)}</summary>
+        <div className={styles.inspectorGrid}>
+          <div><h4>Snatch · all working loads</h4>{day.snatch.length ? loads.map(load => { const blocks = day.snatch.filter(b => b.weight_kg === load), n = snatchCounts(blocks); return blocks.length ? <p key={load}>{load} kg: {n.complete ? `${n.stood}/${n.attempts}` : "? / ?"}{n.unknown ? " * incomplete blocks" : ""} · quality {blocks.map(b => b.quality_10 ?? "?").join(", ")}/10</p> : null; }) : <Missing>No working full snatch recorded</Missing>}</div>
+          <div><h4>Hypertrophy</h4>{day.sets.length ? setups.filter(s => s.byDate.has(day.date)).map(s => <p key={s.key}><strong>{s.label}</strong><br />{setsLabel(s.byDate.get(day.date)!)}</p>) : <Missing>No sets recorded</Missing>}</div>
+          <div><h4>Calisthenics</h4>{day.skills.length ? day.skills.map(e => { const r = skillResult(e, attempts); return <p key={e.id}>{variations.find(v => v.id === e.skill_variation_id)?.name ?? "Skill"}: quality {e.quality_10 ?? "?"}/10 · {r.successes ?? "?"}/{r.attempts ?? "?"} successful{r.unjudged ? ` · ${r.unjudged} unjudged` : ""} · hold {e.best_hold_seconds ?? "?"} s</p>; }) : <Missing>No skill entries recorded</Missing>}</div>
+          <div><h4>Recovery</h4>{RECOVERY.map(m => <p key={m.slug}>{m.label}: {metric(day, m.slug) == null ? <Missing>unrecorded</Missing> : `${metric(day, m.slug)}${m.unit}`}</p>)}</div>
+        </div>
+        {day.dayNotes || day.notes.length ? <div className={styles.notes}><strong>Reported context</strong>{day.dayNotes ? <p>{day.dayNotes}</p> : null}{day.notes.map((note, i) => <p key={i}>{note}</p>)}</div> : null}
+        <Link className={styles.dayLink} href={`/day/${day.date}`}>Open day record →</Link>
+      </details>
     </section>
-
     <div className={styles.panels}>
-      <Panel title="1 · Snatch outcomes" subtitle="Working full snatch only · solid = stood · striped = other counted outcomes">
-        <div className={styles.barChart}>{days.map(d => <button type="button" key={d.date} className={d.date === selected ? styles.barSelected : undefined} onClick={() => setSelected(d.date)} aria-pressed={d.date === selected} aria-label={`${dateLabel(d.date)}: ${d.counts.complete ? `${d.counts.stood} stood of ${d.counts.attempts} counted attempts` : "no complete counts"}${d.counts.unknown ? ", incomplete blocks" : ""}`}>
-          <span className={styles.barCount}>{d.counts.complete ? `${d.counts.stood}/${d.counts.attempts}` : "—"}{d.counts.unknown ? " *" : ""}</span>
-          <span className={styles.barTrack}>{d.counts.complete && d.counts.attempts > 0 ? <span className={styles.bar} style={{ height: `${d.counts.attempts / maxAttempts * 100}%` }}><span className={styles.barOther} style={{ height: `${(d.counts.attempts - d.counts.stood) / d.counts.attempts * 100}%` }} /><span className={styles.barStood} style={{ height: `${d.counts.stood / d.counts.attempts * 100}%` }} /></span> : <span className={styles.noBar}>{d.counts.complete ? "0" : d.counts.unknown ? "?" : "—"}</span>}</span>
-          <strong>{dateLabel(d.date)}</strong>
-        </button>)}</div>
-        <p className={styles.hint}>Height shows counted attempts (maximum {maxAttempts === 1 && !full.attempts ? "not available" : maxAttempts}). * Incomplete blocks excluded from the ratio. Warm-ups, cooldowns and reconstructed history excluded.</p>
+      <Panel title="1 · Snatch outcomes" subtitle="Working full lifts · length shows counted attempts">
+        <label className={styles.selectLabel}>Working load<select value={activeLoad == null ? "all" : String(activeLoad)} onChange={event => setLoadFilter(event.target.value)}><option value="all">All working loads</option>{loads.map(load => <option key={load} value={load}>{load} kg</option>)}</select></label>
+        <div className={styles.barRows}>{days.map((d, i) => { const c = counts[i]; return <button className={styles.barRow} type="button" key={d.date} onClick={() => setSelected(d.date)} aria-pressed={d.date === selectedDate} aria-label={`${dateLabel(d.date)}, ${snatchLabel}: ${c.complete ? `${c.stood} stood of ${c.attempts} counted attempts` : "no complete counts"}${c.unknown ? ", incomplete blocks" : ""}`}>
+          <strong>{dateLabel(d.date)}</strong><span className={styles.barTrack}>{c.attempts > 0 ? <span className={styles.barStack} style={{ width: `${c.attempts / maxAttempts * 100}%` }}><span className={styles.barStood} style={{ width: `${c.stood / c.attempts * 100}%` }} /><span className={styles.barOther} style={{ width: `${(c.attempts - c.stood) / c.attempts * 100}%` }} /></span> : <span className={styles.emptyTrack}>{c.complete ? "0 attempts" : c.unknown ? "?" : "—"}</span>}</span><span className={styles.barValue}>{c.complete ? `${c.stood}/${c.attempts}` : c.unknown ? "?" : "—"}{c.unknown && c.complete ? " *" : ""}</span>
+        </button>; })}</div>
+        <div className={styles.legend}><span><i className={styles.stoodKey} />Stood</span><span><i className={styles.otherKey} />Other counted outcomes</span></div><p className={styles.hint}>* Incomplete blocks excluded from ratios. Warm-ups, cooldowns and reconstruction excluded.</p>
       </Panel>
-      <Panel title="2 · Recovery alongside performance" subtitle="Reported scores /10; sleep duration in hours">
-        <div className={styles.tableScroll}><table><thead>{dateHeads}</thead><tbody>{RECOVERY.map(m => <tr key={m.slug}><th scope="row">{m.label}{m.unit === " h" ? " (h)" : ""}</th>{days.map(d => { const v = d.metrics.find(r => r.metric === m.slug)?.value_numeric; return <td key={d.date} className={cellClass(d.date)}>{v == null ? <Missing /> : v}</td>; })}</tr>)}</tbody></table></div>
-        <p className={styles.hint}>— Unrecorded, never zero. The selected column aligns with the day above. These reports provide context, not evidence of causation.</p>
+      <Panel title="2 · Recovery alongside training" subtitle="Reported /10 · missing readings leave a gap">
+        <RecoveryPlot days={days} selected={selectedDate} onSelect={setSelected} /><p className={styles.hint}>Reports provide context, not evidence of causation.</p>
+        <details className={styles.drill}><summary>All recovery readings</summary><div className={styles.tableScroll}><table className={styles.recoveryTable}><thead>{dateHeads("Metric")}</thead><tbody>{RECOVERY.map(m => <tr key={m.slug}><th scope="row">{m.label}{m.unit === " h" ? " (h)" : ""}</th>{days.map(d => <td key={d.date}>{metric(d, m.slug) ?? <Missing />}</td>)}</tr>)}</tbody></table></div></details>
       </Panel>
-      <Panel title="3 · Exercise performance" subtitle="Sets × reps @ load · repetitions in reserve (RIR) · each setup kept separate" wide>
-        {setups.size ? <div className={styles.tableScroll}><table className={styles.performanceTable}><thead>{dateHeads}</thead><tbody>{[...setups.entries()].map(([key, s]) => <tr key={key}><th scope="row">{s.label}<span className={styles.evidence}>{!s.identified ? "Equipment context incomplete · comparability unverified" : s.byDate.size < 2 ? "One observed date · insufficient longitudinal data" : `${s.byDate.size} observed dates · compare like-for-like sets`}</span></th>{days.map(d => <td key={d.date} className={cellClass(d.date)}>{s.byDate.has(d.date) ? s.byDate.get(d.date)!.map((r, i) => <span className={styles.setLine} key={i}>{setsLabel([r])}</span>) : <Missing />}</td>)}</tr>)}</tbody></table></div> : <p className={styles.hint}>No exercise sets recorded in these seven days.</p>}
-        <p className={styles.hint}>? Missing load, reps or RIR. Drop sets are labelled; left and right sides stay separate. Set counts describe dose. Loads across different machines or gyms do not establish progression.</p>
+      <Panel title="3 · Strength and hypertrophy dose" subtitle="Recorded sets by date · body-part emphasis">
+        <div className={styles.barRows}>{days.map((d, i) => <button className={`${styles.barRow} ${styles.doseRow}`} type="button" key={d.date} onClick={() => setSelected(d.date)} aria-pressed={d.date === selectedDate} aria-label={`${dateLabel(d.date)}: ${doses[i].count ? `${doses[i].count} sets, ${doses[i].label}` : "no sets recorded"}`}><strong>{dateLabel(d.date)}</strong><span className={styles.barTrack}>{doses[i].count ? <span className={styles.barDose} style={{ width: `${doses[i].count / maxDose * 100}%` }} /> : <span className={styles.emptyTrack}>—</span>}</span><span className={styles.barValue} title={doses[i].detail}>{doses[i].count ? <>{doses[i].count}<small>{doses[i].label}</small></> : "—"}</span></button>)}</div>
+        <p className={styles.hint}>Dose is context, not a progression score. Loads on different machines are not pooled.</p><details className={styles.drill}><summary>Compare a specific exercise</summary><ExerciseComparison setups={setups} days={days} selected={selectedDate} onSelect={setSelected} /></details>
       </Panel>
-      <Panel title="4 · Snatch load checkpoints" subtitle="Successful stands / counted attempts, by date · quality ratings shown individually" wide>
-        {loads.length ? <div className={styles.tableScroll}><table><thead>{dateHeads}</thead><tbody>{loads.map(load => <tr key={load}><th scope="row">{load} kg</th>{days.map(d => { const blocks = d.snatch.filter(b => b.weight_kg === load); const c = snatchCounts(blocks); return <td key={d.date} className={cellClass(d.date)}>{blocks.length ? <><strong>{c.complete ? `${c.stood}/${c.attempts}` : "? / ?"}{c.unknown ? " *" : ""}</strong><span className={styles.evidence}>quality {blocks.map(b => b.quality_10 ?? "?").join(", ")}/10</span></> : <Missing />}</td>; })}</tr>)}</tbody></table></div> : <p className={styles.hint}>No working-load checkpoints recorded.</p>}
-        <p className={styles.hint}>Read technical consistency at the same load. Ratings are judgements, never averaged. A single date cannot establish a trend; small counts remain counts.</p>
+      <Panel title="4 · Snatch load checkpoints" subtitle="Colour describes the outcome · counts stay visible">
+        {loads.length ? <div className={styles.tableScroll}><table className={styles.heatmap}><thead>{dateHeads("Load")}</thead><tbody>{loads.map(load => <tr key={load}><th scope="row">{load} kg</th>{days.map(d => { const blocks = d.snatch.filter(b => b.weight_kg === load), c = snatchCounts(blocks); const tone = outcomeTone(c.stood, c.attempts, c.unknown > 0); return <td key={d.date}>{blocks.length ? <button type="button" className={`${styles.heatCell} ${toneClass[tone]}`} onClick={() => setSelected(d.date)} aria-pressed={d.date === selectedDate} aria-label={`${dateLabel(d.date)}, ${load} kg: ${c.complete ? `${c.stood} stood of ${c.attempts} counted attempts` : "counts incomplete"}${c.unknown ? "; incomplete blocks excluded" : ""}`} title={`Quality /10: ${blocks.map(b => b.quality_10 ?? "unrecorded").join(", ")}`}><span className={styles.outcomeMark} aria-hidden>{OUTCOME_MARKS[tone]}</span><strong>{c.complete ? `${c.stood}/${c.attempts}` : "? / ?"}{c.unknown ? " *" : ""}</strong></button> : <Missing />}</td>; })}</tr>)}</tbody></table></div> : <Missing>No working-load checkpoints recorded</Missing>}
+        <OutcomeLegend /><p className={styles.hint}>Colour is not a trend. 0/1 is one unsuccessful attempt. ? / * Incomplete measurement; — no observation. Inspect a day for quality ratings.</p>
       </Panel>
-      <Panel title="5 · Calisthenics skill quality" subtitle="Quality /10 · successful attempts / attempts · timed holds in seconds" wide>
-        {skills.size ? <div className={styles.tableScroll}><table><thead>{dateHeads}</thead><tbody>{[...skills.entries()].map(([key, s]) => <tr key={key}><th scope="row">{s.label}</th>{days.map(d => { const entries = d.skills.filter(e => e.skill_variation_id === s.variationId && e.assistance_id === s.assistanceId); return <td key={d.date} className={cellClass(d.date)}>{entries.length ? entries.map(e => { const r = skillResult(e, attempts); return <div key={e.id}><strong>{e.quality_10 == null ? <Missing>quality ?</Missing> : `${e.quality_10}/10`}</strong><span className={styles.evidence}>{r.successes ?? "?"}/{r.attempts ?? "?"} successful{r.unjudged ? ` · ${r.unjudged} unjudged` : ""}<br />hold {e.best_hold_seconds == null ? "?" : `${e.best_hold_seconds} s`}</span></div>; }) : <Missing />}</td>; })}</tr>)}</tbody></table></div> : <p className={styles.hint}>No skill observations recorded.</p>}
-        <p className={styles.hint}>Variations and assistance stay separate. Quality, success counts and hold duration describe different capabilities. Missing ratings and unjudged attempts are not failures.</p>
+      <Panel title="5 · Calisthenics" subtitle="Quality and completion describe different capabilities" wide aside={<div className={styles.modeSwitch} role="group" aria-label="Colour skill cells by">{(["quality", "success"] as const).map(mode => <button type="button" key={mode} aria-pressed={mode === skillMode} onClick={() => setSkillMode(mode)}>{mode === "quality" ? "Quality" : "Success"}</button>)}</div>}>
+        {skills.size ? <div className={styles.tableScroll}><table className={`${styles.heatmap} ${styles.skillTable}`}><thead>{dateHeads("Skill · same assistance")}</thead><tbody>{[...skills.entries()].map(([key, skill]) => <tr key={key}><th scope="row">{skill.label}</th>{days.map((d, i) => {
+          const forSkill = (date: typeof d) => date.skills.filter(e => e.skill_variation_id === skill.variationId && e.assistance_id === skill.assistanceId);
+          const entries = forSkill(d), priorDay = days.slice(0, i).findLast(previous => forSkill(previous).length > 0);
+          const difference = priorDay && skill.assistanceId != null ? qualityChange(entries.map(e => e.quality_10), forSkill(priorDay).map(e => e.quality_10)) : null;
+          return <td key={d.date}>{entries.length ? entries.map(e => {
+            const r = skillResult(e, attempts), tone = outcomeTone(r.successes, r.attempts, (r.unjudged ?? 0) > 0);
+            const qualityStyle = skillMode === "quality" && e.quality_10 != null ? { "--rating-strength": `${8 + e.quality_10 * 3.5}%` } as CSSProperties : undefined;
+            return <button type="button" key={e.id} className={`${styles.heatCell} ${skillMode === "success" ? toneClass[tone] : e.quality_10 == null ? styles.outcomeUnknown : styles.qualityCell}`} style={qualityStyle} onClick={() => setSelected(d.date)} aria-pressed={d.date === selectedDate} aria-label={`${dateLabel(d.date)}, ${skill.label}: quality ${e.quality_10 ?? "unrecorded"} out of 10, ${r.successes ?? "unknown"} successes of ${r.attempts ?? "unknown"} attempts${r.unjudged ? `, ${r.unjudged} unjudged` : ""}`}>
+              <strong>{skillMode === "quality" ? e.quality_10 == null ? "?" : `${e.quality_10}/10` : `${OUTCOME_MARKS[tone]} ${r.successes ?? "?"}/${r.attempts ?? "?"}`}</strong><small>{skillMode === "quality" ? `${r.successes ?? "?"}/${r.attempts ?? "?"} successful` : `quality ${e.quality_10 == null ? "?" : `${e.quality_10}/10`}`}{r.unjudged ? ` · ${r.unjudged} unjudged` : ""}</small>
+              {skillMode === "quality" && difference != null && difference !== 0 && priorDay ? <span className={styles.change} title="Difference between recorded ratings, not an established trend">{difference > 0 ? "↑ +" : "↓ "}{difference} vs {dateLabel(priorDay.date)}</span> : null}
+            </button>;
+          }) : <Missing />}</td>;
+        })}</tr>)}</tbody></table></div> : <Missing>No skill observations recorded</Missing>}
+        {skillMode === "success" ? <OutcomeLegend /> : <div className={styles.legend}><span><i className={styles.qualityKey} />Purple intensity = recorded quality /10</span><span>↑ / ↓ Change in a single rating, not a trend</span></div>}
+        <p className={styles.hint}>? Incomplete measurement; — no observation. Variations and assistance stay separate. A successful attempt can have low technical quality. Holds and attempt detail are in daily inspection.</p>
       </Panel>
     </div>
-    <p className={styles.limitations}>Reading this window: — no observation · ? incomplete measurement · 0 a recorded zero. Seven days describe what happened; repeated comparable observations are needed to establish progression.{data.importedSessions ? ` ${data.importedSessions} reconstructed sessions in this window are excluded from daily comparisons.` : ""}</p>
+    <p className={styles.limitations}>Seven days describe what happened. Repeated comparable observations are needed to establish progression. Missing measurements are not zeros or declines.{data.importedSessions ? ` ${data.importedSessions} reconstructed sessions are excluded from daily comparisons.` : ""}</p>
   </section>;
 }
 
-function Stat({ label, value, hint }: { label: string; value: ReactNode; hint: string }) {
-  return <div className={styles.stat}><span>{label}</span><strong>{value}</strong><small>{hint}</small></div>;
+function ExerciseComparison({ setups, days, selected, onSelect }: { setups: ExerciseSetup[]; days: DailyProgressData["days"]; selected: string; onSelect: (date: string) => void }) {
+  const [key, setKey] = useState("");
+  const [load, setLoad] = useState("");
+  const setup = setups.find(s => s.key === key) ?? setups.find(s => s.identified && s.byDate.size > 1) ?? setups[0];
+  const loads = setup ? [...new Set([...setup.byDate.values()].flat().filter(s => !s.is_drop && s.load_kg != null && s.reps != null).map(s => s.load_kg!))].sort((a, b) => a - b) : [];
+  const activeLoad = load && loads.includes(Number(load)) ? Number(load) : loads.find(value => new Set(matchedReps(setup, value).map(p => p.date)).size > 1) ?? loads.at(-1) ?? null;
+  const points = matchedReps(setup, activeLoad), dates = new Set(points.map(p => p.date)).size;
+  if (!setup) return <p className={styles.hint}>No exercise sets recorded in this window.</p>;
+  return <div className={styles.comparison}>
+    <label className={styles.selectLabel}>Exercise and recorded setup<select value={setup.key} onChange={event => { setKey(event.target.value); setLoad(""); }}>{setups.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}</select></label>
+    {loads.length ? <label className={styles.selectLabel}>Working load<select value={activeLoad ?? ""} onChange={event => setLoad(event.target.value)}>{loads.map(value => <option key={value} value={value}>{value} kg</option>)}</select></label> : null}
+    {!setup.identified ? <p className={styles.hint}>Equipment context is incomplete. A matched-setup progression plot is unavailable.</p> : dates < 2 ? <p className={styles.hint}>{dates ? "One observed date" : "No complete working sets"} at this setup and load · insufficient longitudinal data.</p> : <><p className={styles.hint}>Reps at {activeLoad} kg · each recorded working set, never averaged</p><RepetitionPlot days={days} selected={selected} onSelect={onSelect} points={points} /><p className={styles.hint}>Same exercise, gym, equipment, side, load and recorded order. RIR and other conditions still affect interpretation; no improvement verdict is computed.</p></>}
+    <details className={styles.drill}><summary>Recorded sets for this setup</summary>{[...setup.byDate].sort(([a], [b]) => a.localeCompare(b)).map(([date, sets]) => <p className={styles.setRecord} key={date}><strong>{dateLabel(date)}</strong><br />{setsLabel(sets)}</p>)}</details>
+  </div>;
 }
-function Panel({ title, subtitle, children, wide }: { title: string; subtitle: string; children: ReactNode; wide?: boolean }) {
-  return <section className={`${styles.panel} ${wide ? styles.wide : ""}`}><h3>{title}</h3><p className={styles.subtitle}>{subtitle}</p>{children}</section>;
-}
+function OutcomeLegend() { return <div className={styles.legend}><span><i className={styles.allKey} />✓ All successful</span><span><i className={styles.partialKey} />◐ Some successful</span><span><i className={styles.noneKey} />× None successful</span></div>; }
+function Stat({ label, value, hint }: { label: string; value: ReactNode; hint: string }) { return <div className={styles.stat}><span>{label}</span><strong>{value}</strong><small>{hint}</small></div>; }
+function Panel({ title, subtitle, children, wide, aside }: { title: string; subtitle: string; children: ReactNode; wide?: boolean; aside?: ReactNode }) { return <section className={`${styles.panel} ${wide ? styles.wide : ""}`}><div className={styles.panelHeading}><h3>{title}</h3>{aside}</div><p className={styles.subtitle}>{subtitle}</p>{children}</section>; }

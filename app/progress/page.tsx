@@ -182,6 +182,8 @@ export default async function ProgressPage({
         gyms={reference.gyms}
         variations={reference.skillVariations}
         assistance={reference.assistanceTypes}
+        muscleGroups={reference.muscleGroups}
+        regions={reference.muscleRegions}
       /> : null}
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
