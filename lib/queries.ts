@@ -1007,7 +1007,7 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
   // whole weeks: a week of training and six months of it are both questions
   // worth asking, and 26.1 weeks is not a period anybody thinks in.
   const from = days
-    ? new Date(Date.parse(to) - days * 86400000).toISOString().slice(0, 10)
+    ? new Date(Date.parse(to) - (days === 7 ? 6 : days) * 86400000).toISOString().slice(0, 10)
     : "1970-01-01";
 
   const [
