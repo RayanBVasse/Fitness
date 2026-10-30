@@ -25,6 +25,19 @@ Backfill import: **run.** 401 rows staged, 373 promoted into 79 sessions. See be
 
 ## Setup
 
+### Progress windows
+
+The **7 days** selection shows exactly seven London calendar dates, ending today.
+Daily selection links snatch outcomes and working-load quality, exercise performance,
+calisthenics quality and recovery in one inline inspector. Missing days stay visible;
+`—` means no observation, `?` an incomplete measurement, and `0` a recorded zero.
+Only logged observations enter this daily comparison. Warm-up and cooldown snatches
+are excluded from working-load checkpoints. Hypertrophy sets are separated by
+exercise, gym, machine and side, with reps, load, RIR and drop-set labels retained.
+Unknown equipment context is explicitly marked as unverified for comparison.
+Longer windows retain the weekly charts. Preceding-seven-day comparison is not yet
+implemented.
+
 1. **Run the migrations** in the Supabase SQL editor, in order:
    - `supabase/migrations/0001_init.sql`
    - `supabase/migrations/0002_seed.sql`

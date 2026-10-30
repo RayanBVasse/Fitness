@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { getDailyProgress } from "@/lib/dailyProgressQuery";
+import { SevenDayProgress } from "@/components/progress/SevenDayProgress";
 import {
   getExperiments,
   getProgress,
@@ -66,6 +68,10 @@ export default async function ProgressPage({
     getExperiments(),
   ]);
   if (error) return <SetupNotice error={error} />;
+  const daily = period.days === 7
+    ? await getDailyProgress(londonToday(), reference.variations.filter(v => v.counts_as_full_lift).map(v => v.id))
+    : null;
+  if (daily?.error || (daily && reference.error)) return <SetupNotice error={daily?.error ?? reference.error!} />;
 
   const rows = data ?? [];
   const objective = reference.objective;
@@ -113,14 +119,14 @@ export default async function ProgressPage({
       <header>
         <h1 className="text-2xl font-bold">Progress</h1>
         <p className="text-sm text-text-dim">
-          Substantiated blocks only — those recording both attempts and stands.
+          {daily ? "Performance in the context of training load and recovery." : "Substantiated blocks only — those recording both attempts and stands."}
         </p>
       </header>
 
       {/* What the window actually holds, before any chart is read. "All" is
           named by its earliest record rather than by 1970, which is where the
           query starts and not where the training does. */}
-      <p className="text-[11px] leading-snug text-text-faint">
+      {!daily ? <p className="text-[11px] leading-snug text-text-faint">
         {counts.daysWithRecords === 0 ? (
           <>Nothing recorded in the last {period.label.toLowerCase()}.</>
         ) : (
@@ -138,7 +144,7 @@ export default async function ProgressPage({
               : ""}
           </>
         )}
-      </p>
+      </p> : null}
 
       {/* The window every chart below is drawn over. A link rather than a
           control, so the page stays server-rendered and a period is a place
@@ -169,7 +175,17 @@ export default async function ProgressPage({
           chart: a 540px column is wider than the whole app used to be.
           items-start keeps a short card from stretching to match a tall
           neighbour, and the wide things below span both. */}
+      {daily ? <SevenDayProgress
+        data={daily.data}
+        attempts={daily.attempts}
+        exercises={reference.exercises}
+        gyms={reference.gyms}
+        variations={reference.skillVariations}
+        assistance={reference.assistanceTypes}
+      /> : null}
+
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        {!daily ? <>
         <SnatchProgress data={progress} />
         <HypertrophyProgress
           data={progress}
@@ -178,15 +194,16 @@ export default async function ProgressPage({
         />
         <CalisthenicsProgress data={progress} />
         <BodyProgress data={progress} />
+        </> : null}
 
         {/* After the charts, because it explains them: a month that looks
             quiet above is usually a month written down differently. Kept to
             one column — stretched across the page the month sits at one edge
             and its counts at the other, which is a long way for an eye to
             carry four numbers. */}
-        <Coverage data={progress} />
+        {!daily ? <Coverage data={progress} /> : null}
 
-        {objective ? (
+        {!daily && objective ? (
           <Card>
             <SectionTitle>Primary objective</SectionTitle>
           <p className="text-sm leading-snug">{objective.statement}</p>
@@ -212,7 +229,7 @@ export default async function ProgressPage({
           </Card>
         ) : null}
 
-        <Card>
+        {!daily ? <Card>
           <SectionTitle aside="stand / receive">By load</SectionTitle>
         {rows.length === 0 ? (
           <InsufficientData reason="No substantiated snatch blocks yet. Rates appear once a block records both attempts and stands." />
@@ -262,7 +279,7 @@ export default async function ProgressPage({
           only from {MIN_ATTEMPTS_FOR_RATE} attempts; below that the counts are shown and the
           rate is not, because one lift either way would move it by twenty points.
           </p>
-        </Card>
+        </Card> : null}
 
         {/* Beside the reviews, because that is where these come from: an
             outside reader proposes something, and this is where it stops

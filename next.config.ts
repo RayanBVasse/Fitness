@@ -8,7 +8,9 @@ const nextConfig: NextConfig = {
   cacheComponents: false,
   turbopack: {
     rules: {
-      "*.css": {
+      // Only the global entry imports Tailwind. Rewriting a *.module.css
+      // file as *.css removes CSS Module scoping and its class-name exports.
+      "globals.css": {
         loaders: ["@tailwindcss/turbopack"],
         as: "*.css",
       },
