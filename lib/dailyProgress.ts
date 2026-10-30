@@ -36,7 +36,12 @@ export function skillResult(entry: CalisthenicsEntry, attempts: CalisthenicsAtte
 }
 
 export function buildDailyProgress(to: string, records: DailyRecords, fullLiftIds: number[]) {
-  const dates = sevenDates(to);
+  return buildProgressDays(sevenDates(to), records, fullLiftIds);
+}
+
+/** The same logged-observation rules for daily and calendar-month inspection. */
+export function buildProgressDays(dates: string[], records: DailyRecords, fullLiftIds: number[]) {
+  const to = dates.at(-1)!;
   const loggedSessions = records.sessions.filter(s => s.provenance === "logged");
   const importedSessions = records.sessions.filter(s => s.provenance !== "logged").length;
   return {

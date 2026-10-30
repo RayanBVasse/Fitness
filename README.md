@@ -27,6 +27,16 @@ Backfill import: **run.** 401 rows staged, 373 promoted into 79 sessions. See be
 
 ### Progress windows
 
+**Monthly** is a calendar-month review and the default Progress view. It has
+previous/next-month navigation and a month picker. Its calendar distinguishes logged,
+historical, mixed, rest and context-only evidence; missing dates are unknown and
+future dates are disabled. Weekly coverage bars count sessions with training records,
+separated by source, rather than asserting training frequency. Snatch reliability
+uses complete directly logged working-lift counts only; historical milestones remain
+separate. Workstream tabs retain exercise/equipment and skill/assistance boundaries.
+Recovery defaults to the latest seven calendar dates within the month, with an
+all-month option. The rolling 30-day and longer charts remain available.
+
 The **7 days** selection shows exactly seven London calendar dates, ending today.
 Daily selection links snatch outcomes and working-load quality, exercise performance,
 calisthenics quality and recovery in one inline inspector. Missing days stay visible;

@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { getDailyProgress } from "@/lib/dailyProgressQuery";
 import { SevenDayProgress } from "@/components/progress/SevenDayProgress";
+import { MonthlyProgress } from "@/components/progress/MonthlyProgress";
+import { getMonthlyProgress } from "@/lib/monthlyProgressQuery";
+import { resolveMonth } from "@/lib/monthDates";
 import {
   getExperiments,
   getProgress,
@@ -43,6 +46,7 @@ export const dynamic = "force-dynamic";
  */
 const PERIODS: { slug: string; label: string; days: number | null }[] = [
   { slug: "7d", label: "7 days", days: 7 },
+  { slug: "month", label: "Monthly", days: 30 },
   { slug: "30d", label: "30 days", days: 30 },
   { slug: "90d", label: "90 days", days: 90 },
   { slug: "6m", label: "6 months", days: 183 },
@@ -56,10 +60,12 @@ const MIN_WEEKS_FOR_TREND = 3;
 export default async function ProgressPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; month?: string }>;
 }) {
-  const { period: periodParam } = await searchParams;
+  const { period: periodParam, month: monthParam } = await searchParams;
   const period = PERIODS.find((p) => p.slug === periodParam) ?? PERIODS[1];
+  const today = londonToday();
+  const selectedMonth = resolveMonth(monthParam, today);
 
   const [{ data, error }, reference, progress, experiments] = await Promise.all([
     getSnatchSuccessBySource(),
@@ -72,6 +78,10 @@ export default async function ProgressPage({
     ? await getDailyProgress(londonToday(), reference.variations.filter(v => v.counts_as_full_lift).map(v => v.id))
     : null;
   if (daily?.error || (daily && reference.error)) return <SetupNotice error={daily?.error ?? reference.error!} />;
+  const monthDashboard = period.slug === "month"
+    ? await getMonthlyProgress(selectedMonth, today, reference.variations.filter(v => v.counts_as_full_lift).map(v => v.id))
+    : null;
+  if (monthDashboard?.error || (monthDashboard && reference.error)) return <SetupNotice error={monthDashboard?.error ?? reference.error!} />;
 
   const rows = data ?? [];
   const objective = reference.objective;
@@ -85,7 +95,7 @@ export default async function ProgressPage({
   // in a twelve-month window would be a query per week.
   const briefs = new Map(
     await Promise.all(
-      progress.weeklyReviews.slice(0, 2).map(async ({ week }) => {
+      (monthDashboard ? [] : progress.weeklyReviews.slice(0, 2)).map(async ({ week }) => {
         const facts = await getWeekFacts(week);
         return [week, composeWeekBrief(facts, reference.thirdParties).text] as const;
       }),
@@ -95,7 +105,7 @@ export default async function ProgressPage({
   // The month in progress and the one before it, which is the pair you
   // would be writing about. A monthly review is written looking back, so
   // the finished month matters more than the one underway.
-  const thisMonth = londonToday().slice(0, 7);
+  const thisMonth = monthDashboard ? selectedMonth : today.slice(0, 7);
   const months = [thisMonth, previousMonth(thisMonth)];
   const monthly = await Promise.all(
     months.map(async (month) => {
@@ -119,14 +129,14 @@ export default async function ProgressPage({
       <header>
         <h1 className="text-2xl font-bold">Progress</h1>
         <p className="text-sm text-text-dim">
-          {daily ? "Performance in the context of training load and recovery." : "Substantiated blocks only — those recording both attempts and stands."}
+          {daily || monthDashboard ? "Performance in the context of training load and recovery." : "Substantiated blocks only — those recording both attempts and stands."}
         </p>
       </header>
 
       {/* What the window actually holds, before any chart is read. "All" is
           named by its earliest record rather than by 1970, which is where the
           query starts and not where the training does. */}
-      {!daily ? <p className="text-[11px] leading-snug text-text-faint">
+      {!daily && !monthDashboard ? <p className="text-[11px] leading-snug text-text-faint">
         {counts.daysWithRecords === 0 ? (
           <>Nothing recorded in the last {period.label.toLowerCase()}.</>
         ) : (
@@ -186,8 +196,12 @@ export default async function ProgressPage({
         regions={reference.muscleRegions}
       /> : null}
 
+      {monthDashboard ? <MonthlyProgress key={selectedMonth} data={monthDashboard.data} today={today}
+        exercises={reference.exercises} gyms={reference.gyms} variations={reference.skillVariations} assistance={reference.assistanceTypes}
+      /> : null}
+
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-        {!daily ? <>
+        {!daily && !monthDashboard ? <>
         <SnatchProgress data={progress} />
         <HypertrophyProgress
           data={progress}
@@ -203,9 +217,9 @@ export default async function ProgressPage({
             one column — stretched across the page the month sits at one edge
             and its counts at the other, which is a long way for an eye to
             carry four numbers. */}
-        {!daily ? <Coverage data={progress} /> : null}
+        {!daily && !monthDashboard ? <Coverage data={progress} /> : null}
 
-        {!daily && objective ? (
+        {!daily && !monthDashboard && objective ? (
           <Card>
             <SectionTitle>Primary objective</SectionTitle>
           <p className="text-sm leading-snug">{objective.statement}</p>
@@ -231,7 +245,7 @@ export default async function ProgressPage({
           </Card>
         ) : null}
 
-        {!daily ? <Card>
+        {!daily && !monthDashboard ? <Card>
           <SectionTitle aside="stand / receive">By load</SectionTitle>
         {rows.length === 0 ? (
           <InsufficientData reason="No substantiated snatch blocks yet. Rates appear once a block records both attempts and stands." />
@@ -312,7 +326,7 @@ export default async function ProgressPage({
           </Card>
         ))}
 
-        {progress.weeklyReviews.map(({ week, review }) => (
+        {(monthDashboard ? [] : progress.weeklyReviews).map(({ week, review }) => (
           <Card key={week} className="lg:col-span-2">
             <CoachReviewPanel
               scope="week"
