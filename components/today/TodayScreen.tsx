@@ -8,7 +8,7 @@ import { DayNotes } from "@/components/today/DayNotes";
 import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
 import { SessionWorkArea } from "@/components/session/SessionWorkArea";
 import { Card, SectionTitle } from "@/components/ui";
-import { Chip, StickyNote } from "@/components/design";
+import { Chip, StickyNote, gymColour } from "@/components/design";
 import { Scoreboard } from "@/components/today/Scoreboard";
 import { isoWeekday, londonTime, longDate, weekdayName } from "@/lib/time";
 import {
@@ -202,18 +202,39 @@ export function TodayScreen({
             </div>
           ) : null}
 
+          {/* The only gym control. With a session open it records where you
+              are; without one it is the gym the next session will start at.
+              It used to do the second thing only, while a card further down
+              quietly did the first. */}
           {gyms.length > 0 ? (
             <div className="flex flex-wrap justify-end gap-1.5">
-              {gyms.map((gym) => (
-                <Chip
-                  key={gym.id}
-                  size="sm"
-                  on={gymId === gym.id}
-                  onClick={() => setGymId(gym.id === gymId ? null : gym.id)}
-                >
-                  {gym.name}
-                </Chip>
-              ))}
+              {gyms.map((gym) => {
+                const on = session ? session.gym_id === gym.id : gymId === gym.id;
+                return (
+                  <Chip
+                    key={gym.id}
+                    size="sm"
+                    tone={gymColour(gym.id)}
+                    on={on}
+                    disabled={!canWrite || busy}
+                    onClick={() => {
+                      if (!session) {
+                        setGymId(on ? null : gym.id);
+                        return;
+                      }
+                      run(async () => {
+                        await write({
+                          action: "update_session",
+                          session_id: session.id,
+                          gym_id: on ? null : gym.id,
+                        });
+                      });
+                    }}
+                  >
+                    {gym.name}
+                  </Chip>
+                );
+              })}
             </div>
           ) : null}
         </div>
@@ -372,40 +393,14 @@ export function TodayScreen({
         </Card>
       ) : (
         <>
-          <Card>
-            {/* No clocks. Session times were never actually recorded, and
-                showing them implied a precision that did not exist. */}
-            <div>
-              <div className="mb-1.5 text-[11px] uppercase tracking-wide text-text-faint">
-                Gym
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {gyms.map((gym) => {
-                  const on = session.gym_id === gym.id;
-                  return (
-                    <Chip
-                      key={gym.id}
-                      on={on}
-                      disabled={!canWrite || busy}
-                      onClick={() =>
-                        run(async () => {
-                          await write({
-                            action: "update_session",
-                            session_id: session.id,
-                            gym_id: on ? null : gym.id,
-                          });
-                        })
-                      }
-                    >
-                      {gym.name}
-                    </Chip>
-                  );
-                })}
-              </div>
-            </div>
-
-            {sessions.length > 1 ? (
-              <div className="mt-3 flex flex-wrap gap-2">
+          {/* Only when the day holds more than one visit. The gym moved to
+              the header, and a card with nothing else in it is a box drawn
+              around an empty space. No clocks beyond the start: session
+              times were never really recorded, and showing them implied a
+              precision that did not exist. */}
+          {sessions.length > 1 ? (
+            <Card>
+              <div className="flex flex-wrap gap-2">
                 {sessions.map((s, index) => (
                   <button
                     key={s.id}
@@ -423,9 +418,8 @@ export function TodayScreen({
                   </button>
                 ))}
               </div>
-            ) : null}
-
-          </Card>
+            </Card>
+          ) : null}
 
           {/* The logger and the margin. Notes sit beside the work rather
               than under it, where a day's writing was easy to scroll past

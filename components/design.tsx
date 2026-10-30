@@ -39,6 +39,13 @@ type ChipProps = {
   on?: boolean;
   /** Colours the chip by workstream. Omitted for a neutral chip. */
   workstream?: Workstream;
+  /**
+   * An arbitrary colour for something that is not a workstream — a gym, say.
+   * Off, the chip stays quiet and a dot carries the colour; on, the chip
+   * takes it. Only one gym is ever on, so the hues never have to be told
+   * apart from each other at a glance.
+   */
+  tone?: string;
   size?: "sm" | "md";
   disabled?: boolean;
   onClick?: () => void;
@@ -49,6 +56,7 @@ type ChipProps = {
 export function Chip({
   on = false,
   workstream,
+  tone,
   size = "md",
   disabled,
   onClick,
@@ -61,7 +69,15 @@ export function Chip({
       ? "h-[34px] px-[13px] text-[12.5px]"
       : "h-[24px] px-[9px] text-[11px]";
 
-  const style: CSSProperties = c
+  const style: CSSProperties = tone
+    ? on
+      ? { background: tone, borderColor: tone, color: "var(--accent-text)", fontWeight: 700 }
+      : {
+          background: "transparent",
+          borderColor: `color-mix(in oklab, ${tone} 45%, var(--border))`,
+          color: "var(--text-dim)",
+        }
+    : c
     ? on
       ? { background: c.solid, borderColor: c.solid, color: "var(--accent-text)", fontWeight: 700 }
       : { background: c.tint, borderColor: c.line, color: c.fg }
@@ -85,6 +101,13 @@ export function Chip({
       }`}
       style={style}
     >
+      {tone && !on ? (
+        <span
+          className="mr-1.5 inline-block h-[6px] w-[6px] shrink-0 rounded-full"
+          style={{ background: tone }}
+          aria-hidden
+        />
+      ) : null}
       {children}
     </button>
   );
@@ -310,4 +333,22 @@ export function MuscleBar({
       </span>
     </span>
   );
+}
+
+/* -------------------------------------------------------------------------
+ * Gym colours
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A stable colour per gym.
+ *
+ * Keyed on the gym's own id, not its position in a list, so adding a gym
+ * never recolours the others — the same rule the muscle and workstream
+ * tokens follow. The hues sit away from the workstreams (230, 292, 150)
+ * because a gym is a place and should not read as a kind of training.
+ */
+const GYM_HUES = [330, 195, 55, 265];
+
+export function gymColour(id: number): string {
+  return `oklch(0.55 0.14 ${GYM_HUES[id % GYM_HUES.length]})`;
 }
