@@ -1,5 +1,5 @@
 import { composeDayBrief } from "@/lib/brief";
-import { getReferenceData, getToday } from "@/lib/queries";
+import { getReferenceData, getSnatchSuccessBySource, getToday } from "@/lib/queries";
 import { londonTime, londonToday } from "@/lib/time";
 import { SetupNotice } from "@/components/SetupNotice";
 import { TodayScreen } from "@/components/today/TodayScreen";
@@ -9,12 +9,27 @@ export const dynamic = "force-dynamic";
 
 export default async function TodayPage() {
   const date = londonToday();
-  const [reference, today] = await Promise.all([getReferenceData(), getToday(date)]);
+  const [reference, today, rates] = await Promise.all([
+    getReferenceData(),
+    getToday(date),
+    getSnatchSuccessBySource(),
+  ]);
 
   // No gyms means the seed has not run, whatever else succeeded.
   if (reference.error || reference.gyms.length === 0) {
     return <SetupNotice error={reference.error ?? "No reference data found in schema `fitness`."} />;
   }
+
+  // Logged only, and at the objective's own load. The imported
+  // reconstruction is kept out: a rate that blends the two would describe
+  // neither, which is why the by-load table splits them.
+  const primaryLoad = reference.objective?.primary_load_kg ?? null;
+  const loggedAtPrimary = (rates.data ?? []).find(
+    (r) => Number(r.weight_kg) === primaryLoad && r.source === "logged",
+  );
+  const objectiveRate = loggedAtPrimary
+    ? { stood: Number(loggedAtPrimary.stood), attempts: Number(loggedAtPrimary.attempts) }
+    : null;
 
   // Composed here, on the server, so the redaction list never reaches the
   // browser and the client component receives a finished string.
@@ -73,6 +88,7 @@ export default async function TodayPage() {
       variations={reference.variations}
       ladder={reference.ladder}
       objective={reference.objective}
+      objectiveRate={objectiveRate}
       weekdayThemes={reference.weekdayThemes}
     />
   );

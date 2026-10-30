@@ -33,6 +33,11 @@ type Props = {
   updatedAt: string | null;
   /** The deterministic facts to paste out. Null where none are composed. */
   brief?: string | null;
+  /**
+   * Side by side rather than stacked: the facts going out on the left, the
+   * review coming back on the right. Only where there is width for it.
+   */
+  columns?: boolean;
   canWrite: boolean;
 };
 
@@ -43,6 +48,7 @@ export function CoachReviewPanel({
   content,
   updatedAt,
   brief,
+  columns,
   canWrite,
 }: Props) {
   const router = useRouter();
@@ -81,10 +87,18 @@ export function CoachReviewPanel({
   }
 
   return (
-    <div className="space-y-3">
-      <SectionTitle aside={updatedAt ? `saved ${updatedAt}` : null}>
-        {scope === "week" ? `Coach review · ${label}` : "Coach review"}
-      </SectionTitle>
+    <div
+      className={
+        columns
+          ? "grid grid-cols-1 items-start gap-4 min-[900px]:grid-cols-2"
+          : "space-y-3"
+      }
+    >
+      <div className={columns ? "min-[900px]:col-span-2" : ""}>
+        <SectionTitle aside={updatedAt ? `saved ${updatedAt}` : null}>
+          {scope === "week" ? `Coach review · ${label}` : "Coach review"}
+        </SectionTitle>
+      </div>
 
       {/* Half one: what to take out. Offered before the box, because this is
           the step that comes first. */}
@@ -203,7 +217,11 @@ export function CoachReviewPanel({
         </p>
       ) : null}
 
-      <p className="text-[10px] leading-snug text-text-faint">
+      <p
+        className={`text-[10px] leading-snug text-text-faint ${
+          columns ? "min-[900px]:col-span-2" : ""
+        }`}
+      >
         One reader&rsquo;s interpretation, stored as such. Nothing pasted here reaches a success
         rate, a volume total or a trend — those are counted from your records only.
       </p>

@@ -74,6 +74,14 @@ type Props = {
   recentSkillVariationIds: number[];
   /** Null on a past day: see the note above about prefills. */
   initialTab?: Workstream | null;
+  /**
+   * The tab, when the page wants to own it — the scoreboard tiles above set
+   * it, and the tile and the tab must not be able to drift apart. Left
+   * undefined the work area keeps its own, as it always did.
+   */
+  tab?: Workstream;
+  /** Fires on every change, including the one the remembered tab makes. */
+  onTabChange?: (next: Workstream) => void;
   /** Omitted on today; a past day says what it was, not what it is. */
   performanceTitle?: string;
   canWrite: boolean;
@@ -106,10 +114,13 @@ export function SessionWorkArea({
   recentExerciseIds,
   recentSkillVariationIds,
   initialTab = null,
+  tab: controlledTab,
+  onTabChange,
   performanceTitle,
   canWrite,
 }: Props) {
-  const [tab, setTab] = useState<Workstream>(initialTab ?? "snatch");
+  const [ownTab, setOwnTab] = useState<Workstream>(initialTab ?? "snatch");
+  const tab = controlledTab ?? ownTab;
 
   // Which tab you were on, remembered per browser. It is a view preference,
   // not a fact about training, so it has no business in Postgres.
@@ -127,13 +138,17 @@ export function SessionWorkArea({
     // Browser storage cannot be read during render without a hydration
     // mismatch, since the server has no access to it.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (next) setTab(next);
+    if (next) setOwnTab(next);
+    // Told to the page as well, so a scoreboard above can light the tile
+    // that matches the tab you were left on.
+    if (next) onTabChange?.(next);
     // Deliberately once, on mount: after that the tab is yours.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function chooseTab(next: Workstream) {
-    setTab(next);
+    setOwnTab(next);
+    onTabChange?.(next);
     try {
       window.localStorage.setItem(TAB_KEY, next);
     } catch {

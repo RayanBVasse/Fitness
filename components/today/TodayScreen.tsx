@@ -7,7 +7,9 @@ import { DailyCheckIn } from "@/components/today/DailyCheckIn";
 import { DayNotes } from "@/components/today/DayNotes";
 import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
 import { SessionWorkArea } from "@/components/session/SessionWorkArea";
-import { Card, Chip, Pill, SectionTitle } from "@/components/ui";
+import { Card, SectionTitle } from "@/components/ui";
+import { Chip, StickyNote } from "@/components/design";
+import { Scoreboard } from "@/components/today/Scoreboard";
 import { isoWeekday, londonTime, longDate, weekdayName } from "@/lib/time";
 import {
   WORKSTREAM_LABELS,
@@ -39,6 +41,7 @@ import {
   type WeekdayThemes,
   type WarmupLadder,
   type WeightPreset,
+  type Workstream,
 } from "@/lib/types";
 
 type Props = {
@@ -78,6 +81,8 @@ type Props = {
   variations: SnatchVariation[];
   ladder: WarmupLadder | null;
   objective: SnatchObjective | null;
+  /** Logged stands at the objective's load, all time. Null if none. */
+  objectiveRate: { stood: number; attempts: number } | null;
   weekdayThemes: WeekdayThemes;
 };
 
@@ -115,6 +120,7 @@ export function TodayScreen({
   variations,
   ladder,
   objective,
+  objectiveRate,
   weekdayThemes,
 }: Props) {
   const router = useRouter();
@@ -134,6 +140,11 @@ export function TodayScreen({
   // Most days have one visit. When there are two, the latest is the one being
   // logged into, and the other stays reachable rather than hidden.
   const [activeId, setActiveId] = useState<string | null>(null);
+  // The check-in opens from the header instead of holding a card open
+  // all day, and the tab is held here so the scoreboard tiles and the
+  // logger cannot show different workstreams as the active one.
+  const [checkInOpen, setCheckInOpen] = useState(false);
+  const [tab, setTab] = useState<Workstream | null>(null);
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -157,40 +168,61 @@ export function TodayScreen({
   const sessionCalisthenics = calisthenicsEntries.filter((c) => c.session_id === session?.id);
 
   return (
-    <div className="mx-auto max-w-[820px] space-y-4 pt-5">
-      {/* Date, day and gym are shown rather than asked for. */}
-      <header>
-        <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-text-faint">
-          {weekdayName(date)}
+    <div className="mx-auto max-w-[1120px] space-y-3.5 pt-5">
+      {/* One row. The date on the left, and on the right the two things
+          that used to be whole cards: what the check-in holds, and where
+          you are. Neither is worth a card of its own on a day's screen. */}
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-text-faint">
+            {weekdayName(date)}
+          </div>
+          <h1 className="text-[26px] font-extrabold leading-tight">{longDate(date)}</h1>
+          {theme ? (
+            <p className="mt-0.5 text-sm">
+              <span className="font-semibold" style={{ color: "var(--accent)" }}>
+                {theme.name}
+              </span>
+              {theme.emphasis ? <span className="text-text-dim"> · {theme.emphasis}</span> : null}
+            </p>
+          ) : null}
         </div>
-        <h1 className="text-2xl font-bold leading-tight">{longDate(date)}</h1>
-        {theme ? (
-          <p className="mt-0.5 text-sm">
-            <span className="font-semibold" style={{ color: "var(--accent)" }}>
-              {theme.name}
-            </span>
-            {theme.emphasis ? (
-              <span className="text-text-dim"> · {theme.emphasis}</span>
-            ) : null}
-          </p>
-        ) : null}
+
+        <div className="flex flex-col items-end gap-2">
+          {metricDefs.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <span className="tnum text-[11px] text-text-dim">
+                {metrics.length > 0
+                  ? `${metrics.length} recorded`
+                  : "Check-in not answered"}
+              </span>
+              <Chip size="sm" on={checkInOpen} onClick={() => setCheckInOpen((v) => !v)}>
+                {checkInOpen ? "Close" : "Edit"}
+              </Chip>
+            </div>
+          ) : null}
+
+          {gyms.length > 0 ? (
+            <div className="flex flex-wrap justify-end gap-1.5">
+              {gyms.map((gym) => (
+                <Chip
+                  key={gym.id}
+                  size="sm"
+                  on={gymId === gym.id}
+                  onClick={() => setGymId(gym.id === gymId ? null : gym.id)}
+                >
+                  {gym.name}
+                </Chip>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </header>
 
-      {objective ? (
-        <Card className="!p-3">
-          <div className="text-[11px] uppercase tracking-wide text-text-faint">
-            Current objective
-          </div>
-          <p className="mt-0.5 text-sm leading-snug">{objective.statement}</p>
-          <div className="mt-2 flex gap-1.5">
-            <Pill tone="accent">{objective.primary_load_kg} kg</Pill>
-            <Pill tone="stood">target {objective.primary_target_stand_rate_pct}%</Pill>
-            <Pill tone="caught">{objective.secondary_load_kg} kg not yet stood</Pill>
-          </div>
-        </Card>
-      ) : null}
-
-      {metricDefs.length > 0 ? (
+      {/* Opened from the header rather than sitting open all day. It still
+          saves as you move a slider — you asked for no save button, and a
+          dialog would have put one back. */}
+      {checkInOpen && metricDefs.length > 0 ? (
         <Card>
           <DailyCheckIn
             date={date}
@@ -201,6 +233,26 @@ export function TodayScreen({
             canWrite={canWrite}
           />
         </Card>
+      ) : null}
+
+      {session ? (
+        <Scoreboard
+          objective={objective}
+          objectiveRate={objectiveRate}
+          snatchBlocks={sessionSnatchBlocks}
+          snatchAttempts={snatchAttempts}
+          hypertrophySets={sessionHypertrophy}
+          calisthenicsEntries={sessionCalisthenics}
+          calisthenicsAttempts={calisthenicsAttempts}
+          variations={variations}
+          exercises={exercises}
+          muscleGroups={muscleGroups}
+          skillVariations={skillVariations}
+          active={tab}
+          onSelect={setTab}
+        />
+      ) : objective ? (
+        <StickyNote label="Objective">{objective.statement}</StickyNote>
       ) : null}
 
       {!session && day?.status === "rest" ? (
@@ -375,6 +427,10 @@ export function TodayScreen({
 
           </Card>
 
+          {/* The logger and the margin. Notes sit beside the work rather
+              than under it, where a day's writing was easy to scroll past
+              and easier to forget. */}
+          <div className="grid grid-cols-1 items-start gap-3.5 min-[900px]:grid-cols-[1.45fr_1fr]">
           <SessionWorkArea
             date={date}
             sessionId={session.id}
@@ -406,8 +462,23 @@ export function TodayScreen({
             recentExerciseIds={recentExerciseIds}
             recentSkillVariationIds={recentSkillVariationIds}
             initialTab={theme?.focus ?? lastSession?.workstreams?.[0] ?? null}
+            tab={tab ?? undefined}
+            onTabChange={setTab}
             canWrite={canWrite}
           />
+
+          <aside
+            className="p-3.5"
+            style={{ background: "var(--margin-bg)", borderRadius: 14 }}
+          >
+            <DayNotes
+              date={date}
+              sessionId={session.id}
+              notes={notes}
+              canWrite={canWrite}
+            />
+          </aside>
+          </div>
         </>
       )}
 
@@ -417,18 +488,13 @@ export function TodayScreen({
         </p>
       ) : null}
 
-      {/* The day's own notes: the gym, the body, anything the Coach should
-          know that is not attached to one workstream. These replaced the
-          check-in's free-text dimensions, which lived in a table of
-          measurements and were never measurements. */}
-      <Card>
-        <DayNotes
-          date={date}
-          sessionId={session?.id ?? null}
-          notes={notes}
-          canWrite={canWrite}
-        />
-      </Card>
+      {/* Without a session there is no margin to put them in, so the day's
+          notes keep a card of their own. */}
+      {!session ? (
+        <Card>
+          <DayNotes date={date} sessionId={null} notes={notes} canWrite={canWrite} />
+        </Card>
+      ) : null}
 
       {/* Last on the page, because it is the last thing that happens: the
           day's facts go out to the coach, and the coach's reading comes
@@ -441,6 +507,7 @@ export function TodayScreen({
           content={review?.content ?? null}
           updatedAt={reviewSavedAt}
           brief={brief}
+          columns
           canWrite={canWrite}
         />
       </Card>
