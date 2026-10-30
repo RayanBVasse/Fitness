@@ -222,32 +222,39 @@ export function SessionWorkArea({
           boxShadow: `inset 0 3px 0 ${hue}`,
         }}
       >
-        <div
-          role="tablist"
-          aria-label="Workstream"
-          className="mb-3 flex gap-1 rounded-[var(--radius)] p-1"
-          style={{ background: "var(--surface-2)" }}
-        >
+        {/* Three buttons, not a segmented control on a grey track. The
+            active one is solid in its own colour and the other two sit in
+            their tints, so the tab and the tile above it read as the same
+            thing. */}
+        <div role="tablist" aria-label="Workstream" className="mb-3 grid grid-cols-3 gap-2">
           {WORKSTREAMS.map((workstream) => {
             const on = tab === workstream;
-            const tone = wsColour(workstream);
-
-  return (
+            return (
               <button
                 key={workstream}
                 type="button"
                 role="tab"
                 aria-selected={on}
                 onClick={() => chooseTab(workstream)}
-                className="min-h-[44px] flex-1 rounded-[calc(var(--radius)-4px)] px-1 text-xs font-bold"
-                style={{
-                  background: on ? "var(--surface)" : "transparent",
-                  color: on ? tone : "var(--text-dim)",
-                  boxShadow: on ? `inset 0 -2px 0 ${tone}` : undefined,
-                }}
+                className="flex h-[46px] flex-col items-center justify-center rounded-xl border px-1"
+                style={
+                  on
+                    ? {
+                        background: `var(--ws-${workstream})`,
+                        borderColor: `var(--ws-${workstream})`,
+                        color: "var(--accent-text)",
+                      }
+                    : {
+                        background: `var(--ws-${workstream}-tint)`,
+                        borderColor: `var(--ws-${workstream}-line)`,
+                        color: `var(--ws-${workstream}-fg)`,
+                      }
+                }
               >
-                <span className="block truncate">{WORKSTREAM_LABELS[workstream]}</span>
-                <span className="tnum block text-[10px] font-normal text-text-dim">
+                <span className="block truncate text-[13px] font-extrabold">
+                  {WORKSTREAM_LABELS[workstream]}
+                </span>
+                <span className="tnum block text-[10.5px] font-semibold">
                   {tabTotal(workstream)}
                 </span>
               </button>

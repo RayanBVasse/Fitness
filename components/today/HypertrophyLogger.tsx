@@ -663,7 +663,15 @@ function SetEditor({
   return (
     <div
       className="flex items-center gap-1 rounded-md border px-1.5 py-1"
-      style={{ borderColor: hue, background: "var(--surface-2)" }}
+      // The muscle's own colour, not hypertrophy's: §4 asks for the set rows
+      // to carry the muscle, and the editor is the row opened up. Mixed to a
+      // wash rather than used flat, since the muscle tokens are text-weight
+      // and have no tint of their own.
+      style={{
+        borderColor: `color-mix(in oklab, ${hue} 55%, var(--border))`,
+        background: `color-mix(in oklab, ${hue} 10%, var(--surface))`,
+        borderRadius: 12,
+      }}
     >
       <input
         autoFocus

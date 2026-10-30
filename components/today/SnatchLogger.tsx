@@ -364,7 +364,11 @@ export function SnatchLogger({
               type="button"
               disabled={!canWrite || busy}
               onClick={openLadder}
-              className="mt-2 min-h-[44px] w-full rounded-[var(--radius)] border border-dashed border-border text-sm font-semibold text-text-dim disabled:opacity-40"
+              className="mt-2 min-h-[44px] w-full rounded-xl border border-dashed text-sm font-semibold disabled:opacity-40"
+              style={{
+                borderColor: "var(--ws-snatch-line)",
+                color: "var(--ws-snatch-fg)",
+              }}
             >
               Open usual ladder ({ladderWeights.map((w) => trim(w)).join(" · ")})
             </button>
@@ -439,28 +443,33 @@ export function SnatchLogger({
 
           {/* Technical quality is recorded separately from load outcome. A lift
               that was stood is not therefore a good lift. */}
-          <div className="mt-2">
-            <div className="mb-1 text-[10px] uppercase tracking-wide text-text-faint">
-              Technical quality {openBlock.quality_10 ? `· ${openBlock.quality_10}/10` : "· not rated"}
-            </div>
-            <div className="flex gap-1">
-              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  disabled={!canWrite || busy}
-                  onClick={() => rate(openBlock.id, n)}
-                  aria-label={`Quality ${n} of 10`}
-                  className="tnum h-8 flex-1 rounded-md border text-[11px] font-semibold disabled:opacity-40"
-                  style={{
-                    borderColor:
-                      openBlock.quality_10 === n ? wsColour("snatch") : "var(--border)",
-                    color: openBlock.quality_10 === n ? wsColour("snatch") : "var(--text-dim)",
-                  }}
-                >
-                  {n}
-                </button>
-              ))}
+          {/* One row, label inline: the scale and what it says sit together
+              rather than the rating being a heading over a strip. */}
+          <div className="mt-2 flex items-center gap-2">
+            <span className="w-[72px] shrink-0 text-[10px] uppercase leading-tight tracking-wide text-text-dim">
+              Quality {openBlock.quality_10 ? `${openBlock.quality_10}/10` : "— not rated"}
+            </span>
+            <div className="flex flex-1 gap-1">
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
+                const on = openBlock.quality_10 === n;
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    disabled={!canWrite || busy}
+                    onClick={() => rate(openBlock.id, n)}
+                    aria-label={`Quality ${n} of 10`}
+                    className="tnum h-7 flex-1 rounded-md border text-[11px] font-semibold disabled:opacity-40"
+                    style={{
+                      background: on ? "var(--ws-snatch)" : "transparent",
+                      borderColor: on ? "var(--ws-snatch)" : "var(--ws-snatch-line)",
+                      color: on ? "var(--accent-text)" : "var(--ws-snatch-fg)",
+                    }}
+                  >
+                    {n}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -476,7 +485,10 @@ export function SnatchLogger({
           into one line: five rows of "35 kg 1/1" is one fact written five
           times. */}
       {blocks.length ? (
-        <div className="space-y-1.5">
+        <div
+          className="divide-y overflow-hidden border"
+          style={{ borderColor: "var(--border)", borderRadius: 12 }}
+        >
           {blocks.map((block) => {
             const isOpen = block.id === openBlockId;
             const variation = variations.find((v) => v.id === block.variation_id);
@@ -496,11 +508,11 @@ export function SnatchLogger({
             return (
               <div
                 key={block.id}
-                className="rounded-[var(--radius)] border px-2.5 py-1.5"
-                style={{
-                  borderColor: isOpen ? wsColour("snatch") : "var(--border)",
-                  background: isOpen ? "var(--surface-2)" : "transparent",
-                }}
+                className="px-2.5 py-1.5"
+                // The open load is washed in the workstream's tint rather
+                // than outlined: inside one container a second border reads
+                // as a nested box.
+                style={{ background: isOpen ? "var(--ws-snatch-tint)" : "transparent" }}
               >
                 {/* One line per load. The lifts themselves stand in for a
                     tally, so the row says what happened rather than counting
@@ -518,12 +530,12 @@ export function SnatchLogger({
                     </span>
                     {lifts.length > 0 ? (
                       lifts.map((a) => {
-                        const tone =
+                        const oc =
                           a.outcome === "stood"
-                            ? "var(--stood)"
+                            ? "stood"
                             : a.outcome === "received_not_stood"
-                              ? "var(--caught)"
-                              : "var(--missed)";
+                              ? "caught"
+                              : "missed";
                         return (
                           <span
                             key={a.id}
@@ -541,12 +553,15 @@ export function SnatchLogger({
                                 setDetailId(detailId === a.id ? null : a.id);
                               }
                             }}
-                            className="tnum flex h-7 min-w-[24px] items-center justify-center gap-0.5 rounded border px-1 text-[11px] font-bold"
+                            className="tnum flex h-[22px] min-w-[22px] items-center justify-center gap-0.5 border px-1 text-[11px] font-bold"
                             style={{
-                              borderColor: tone,
-                              color: tone,
+                              borderRadius: 6,
+                              borderColor: `var(--oc-${oc})`,
+                              color: `var(--oc-${oc}-fg)`,
                               background:
-                                detailId === a.id ? "var(--surface)" : "transparent",
+                                detailId === a.id
+                                  ? "var(--surface)"
+                                  : `var(--oc-${oc}-tint)`,
                             }}
                           >
                             {a.outcome === "stood" ? "✓" : a.outcome === "received_not_stood" ? "◎" : "✕"}
@@ -585,6 +600,32 @@ export function SnatchLogger({
                       )
                     ) : null}
                   </button>
+                  {/* The rate as a column of its own, so loads line up down
+                      the list instead of the number floating after however
+                      many squares the block happens to have. */}
+                  <span className="w-[72px] shrink-0 text-right">
+                    {total > 0 ? (
+                      <>
+                        <span className="tnum block text-[11px] text-text-dim">
+                          {stood}/{total} · {Math.round((100 * stood) / total)}%
+                        </span>
+                        <span
+                          className="mt-0.5 block h-[4px] w-full overflow-hidden rounded-full"
+                          style={{ background: "var(--oc-stood-tint)" }}
+                        >
+                          <span
+                            className="block h-full"
+                            style={{
+                              width: `${(stood / total) * 100}%`,
+                              background: "var(--oc-stood)",
+                            }}
+                          />
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-[11px] text-text-faint">—</span>
+                    )}
+                  </span>
                   <button
                     type="button"
                     disabled={!canWrite || busy}

@@ -243,7 +243,8 @@ export function CalisthenicsLogger({
         <button
           type="button"
           onClick={() => setShowAll((s) => !s)}
-          className="min-h-[38px] rounded-full border border-dashed border-border px-3 text-xs font-semibold text-text-dim"
+          className="min-h-[38px] rounded-full border border-dashed px-3 text-xs font-semibold"
+          style={{ borderColor: "var(--ws-calisthenics-line)", color: "var(--ws-calisthenics-fg)" }}
         >
           {showAll ? "Recent only" : `All ${variations.length}`}
         </button>
@@ -284,11 +285,11 @@ export function CalisthenicsLogger({
               type="button"
               disabled={!canWrite || busy}
               onClick={() => logAttempt(true)}
-              className="min-h-[64px] rounded-[var(--radius)] border text-base font-bold disabled:opacity-40"
+              className="h-[50px] rounded-xl border text-base font-bold disabled:opacity-40"
               style={{
-                borderColor: "var(--stood)",
-                color: "var(--stood)",
-                background: "var(--stood-bg)",
+                borderColor: "var(--oc-stood)",
+                color: "var(--oc-stood-fg)",
+                background: "var(--oc-stood-tint)",
               }}
             >
               Success
@@ -297,11 +298,11 @@ export function CalisthenicsLogger({
               type="button"
               disabled={!canWrite || busy}
               onClick={() => logAttempt(false)}
-              className="min-h-[64px] rounded-[var(--radius)] border text-base font-bold disabled:opacity-40"
+              className="h-[50px] rounded-xl border text-base font-bold disabled:opacity-40"
               style={{
-                borderColor: "var(--missed)",
-                color: "var(--missed)",
-                background: "var(--missed-bg)",
+                borderColor: "var(--oc-missed)",
+                color: "var(--oc-missed-fg)",
+                background: "var(--oc-missed-tint)",
               }}
             >
               Missed
@@ -319,11 +320,16 @@ export function CalisthenicsLogger({
                       type="button"
                       onClick={() => setDetailId(open ? null : a.id)}
                       aria-label={`Attempt ${a.ordinal}, ${a.succeeded ? "success" : "missed"}`}
-                      className="tnum flex h-9 min-w-[36px] items-center justify-center rounded-md border px-1.5 text-[11px] font-bold"
+                      className="tnum flex h-[22px] min-w-[22px] items-center justify-center border px-1.5 text-[11px] font-bold"
                       style={{
-                        borderColor: a.succeeded ? "var(--stood)" : "var(--missed)",
-                        color: a.succeeded ? "var(--stood)" : "var(--missed)",
-                        background: open ? "var(--surface)" : "transparent",
+                        borderRadius: 6,
+                        borderColor: a.succeeded ? "var(--oc-stood)" : "var(--oc-missed)",
+                        color: a.succeeded ? "var(--oc-stood-fg)" : "var(--oc-missed-fg)",
+                        background: open
+                          ? "var(--surface)"
+                          : a.succeeded
+                            ? "var(--oc-stood-tint)"
+                            : "var(--oc-missed-tint)",
                       }}
                     >
                       {a.ordinal}
