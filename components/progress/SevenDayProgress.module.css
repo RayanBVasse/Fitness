@@ -23,6 +23,8 @@
 .inspectorGrid p, .notes { font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .inspectorGrid p + p { margin-top: 5px; }
 .notes { border-top: 1px solid var(--border); padding-top: 12px; white-space: pre-wrap; }
+.notes summary { cursor: pointer; min-height: 44px; padding: 10px 0; font-weight: 600; }
+.notes p { margin-top: 8px; }
 .panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 15px; padding: 20px; min-width: 0; }
 .wide { grid-column: 1 / -1; }

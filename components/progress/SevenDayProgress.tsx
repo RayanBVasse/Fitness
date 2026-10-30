@@ -93,7 +93,7 @@ export function SevenDayProgress({ data, attempts, exercises, gyms, variations, 
         <div><h4>Calisthenics</h4>{day.skills.length ? day.skills.map(e => { const r = skillResult(e, attempts); return <p key={e.id}>{variations.find(v => v.id === e.skill_variation_id)?.name ?? "Skill"}: quality {e.quality_10 ?? "?"}/10 · {r.successes ?? "?"}/{r.attempts ?? "?"} successful{r.unjudged ? ` · ${r.unjudged} unjudged` : ""} · hold {e.best_hold_seconds ?? "?"} s</p>; }) : <Missing>No skill entries recorded</Missing>}</div>
         <div><h4>Recovery</h4>{RECOVERY.map(m => { const v = day.metrics.find(r => r.metric === m.slug)?.value_numeric; return <p key={m.slug}>{m.label}: {v == null ? <Missing>unrecorded</Missing> : `${v}${m.unit}`}</p>; })}</div>
       </div>
-      {day.dayNotes || day.notes.length ? <div className={styles.notes}><strong>Reported context</strong>{day.dayNotes ? <p>{day.dayNotes}</p> : null}{day.notes.map((n, i) => <p key={i}>{n}</p>)}</div> : <p className={styles.hint}>No daily context notes recorded.</p>}
+      {day.dayNotes || day.notes.length ? <details key={day.date} className={styles.notes}><summary>Reported context · expand notes</summary>{day.dayNotes ? <p>{day.dayNotes}</p> : null}{day.notes.map((n, i) => <p key={i}>{n}</p>)}</details> : <p className={styles.hint}>No daily context notes recorded.</p>}
     </section>
 
     <div className={styles.panels}>
