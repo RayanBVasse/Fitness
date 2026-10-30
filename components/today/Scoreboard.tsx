@@ -1,6 +1,7 @@
 "use client";
 
 import { MuscleBar, StickyNote, TilePill, WorkstreamTile, type TileStat } from "@/components/design";
+import { MIN_ATTEMPTS_FOR_RATE } from "@/components/ui";
 import type {
   CalisthenicsAttempt,
   CalisthenicsEntry,
@@ -170,9 +171,13 @@ export function Scoreboard({
   ];
 
   /* ---- objective ------------------------------------------------------- */
+  // The same floor the rest of the app keeps. A rate drawn from two attempts
+  // moves fifty points on the next lift, and a progress bar is the last
+  // place to put a number that unstable — it is read as how you are doing.
+  const attemptsAt = objectiveRate?.attempts ?? 0;
   const rate =
-    objectiveRate && objectiveRate.attempts > 0
-      ? Math.round((100 * objectiveRate.stood) / objectiveRate.attempts)
+    objectiveRate && attemptsAt >= MIN_ATTEMPTS_FOR_RATE
+      ? Math.round((100 * objectiveRate.stood) / attemptsAt)
       : null;
   const target = objective?.primary_target_stand_rate_pct ?? null;
 
@@ -213,7 +218,10 @@ export function Scoreboard({
             </>
           ) : (
             <div className="mt-1 text-[11px]" style={{ color: "var(--note-ink-dim)" }}>
-              No logged attempts at {objective.primary_load_kg} kg yet, so there is no rate.
+              {attemptsAt === 0
+                ? `No logged attempts at ${objective.primary_load_kg} kg yet, so there is no rate.`
+                : `${objectiveRate?.stood ?? 0} stood of ${attemptsAt} logged at ` +
+                  `${objective.primary_load_kg} kg — too few for a rate.`}
             </div>
           )}
         </StickyNote>
