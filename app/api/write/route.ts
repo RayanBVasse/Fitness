@@ -210,9 +210,9 @@ const Actions = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("save_review"),
-    scope: z.enum(["day", "week"]),
-    /** The day, or the Monday of the week. Both ISO dates. */
-    key: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    scope: z.enum(["day", "week", "month"]),
+    /** The day, the Monday of the week, or the month as YYYY-MM. */
+    key: z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/),
     // Long-form: these arrive as whole documents with headings and tables.
     // Blank is how a review is removed, so there is no minimum.
     content: z.string().max(20000),
@@ -922,8 +922,9 @@ export async function POST(request: Request) {
         // One review per period. The external id is the period, so pasting a
         // corrected review updates the row instead of leaving two documents
         // claiming to describe the same day.
-        const isWeek = input.scope === "week";
-        const externalId = `${isWeek ? "weekly" : "daily"}_review:${input.key}`;
+        const prefix = { day: "daily", week: "weekly", month: "monthly" }[input.scope];
+        const externalId = `${prefix}_review:${input.key}`;
+        const dated = input.scope === "day";
         const content = input.content.trim();
 
         if (!content) {
@@ -948,8 +949,8 @@ export async function POST(request: Request) {
               note_type: "assistant_review",
               category: "coaching_advice",
               content,
-              anchor_date: isWeek ? null : input.key,
-              period_label: isWeek ? input.key : null,
+              anchor_date: dated ? input.key : null,
+              period_label: dated ? null : input.key,
               source_type: "pasted_review",
               evidence_status: "external_assistant_interpretation",
               sensitivity: "normal",
@@ -958,7 +959,7 @@ export async function POST(request: Request) {
               // authored note; the imported pack keeps its own gate.
               review_status: "approved",
               reviewed_at: new Date().toISOString(),
-              tags: ["review", isWeek ? "weekly" : "daily"],
+              tags: ["review", prefix],
               content_hash: await sha256(content),
               updated_at: new Date().toISOString(),
             },

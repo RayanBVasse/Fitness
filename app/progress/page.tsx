@@ -4,6 +4,7 @@ import {
   getProgress,
   getReferenceData,
   getSnatchSuccessBySource,
+  readReview,
 } from "@/lib/queries";
 import { SetupNotice } from "@/components/SetupNotice";
 import { Card, InsufficientData, MIN_ATTEMPTS_FOR_RATE, SectionTitle } from "@/components/ui";
@@ -13,6 +14,8 @@ import { ExperimentRegister } from "@/components/progress/ExperimentRegister";
 import { londonTime, londonToday, longDate } from "@/lib/time";
 import { composeWeekBrief } from "@/lib/weekBrief";
 import { getWeekFacts } from "@/lib/weekFacts";
+import { composeMonthBrief } from "@/lib/monthBrief";
+import { getMonthFacts, previousMonth } from "@/lib/monthFacts";
 import {
   BodyProgress,
   CalisthenicsProgress,
@@ -81,6 +84,23 @@ export default async function ProgressPage({
         return [week, composeWeekBrief(facts, reference.thirdParties).text] as const;
       }),
     ),
+  );
+
+  // The month in progress and the one before it, which is the pair you
+  // would be writing about. A monthly review is written looking back, so
+  // the finished month matters more than the one underway.
+  const thisMonth = londonToday().slice(0, 7);
+  const months = [thisMonth, previousMonth(thisMonth)];
+  const monthly = await Promise.all(
+    months.map(async (month) => {
+      const facts = await getMonthFacts(month);
+      return {
+        month,
+        label: facts.label,
+        brief: composeMonthBrief(facts, reference.thirdParties).text,
+        review: await readReview("month", month),
+      };
+    }),
   );
 
   const counts = progress.counts;
@@ -258,6 +278,21 @@ export default async function ProgressPage({
             facts block yet — a week's brief is not seven days concatenated,
             and inventing one here would make it look like the app had
             computed the week. */}
+        {/* The monthly review, above the weeks it covers. */}
+        {monthly.map((m) => (
+          <Card key={m.month} className="lg:col-span-2">
+            <CoachReviewPanel
+              scope="month"
+              periodKey={m.month}
+              label={m.label}
+              content={m.review?.content ?? null}
+              updatedAt={m.review ? londonTime(m.review.updated_at) : null}
+              brief={m.brief}
+              canWrite
+            />
+          </Card>
+        ))}
+
         {progress.weeklyReviews.map(({ week, review }) => (
           <Card key={week} className="lg:col-span-2">
             <CoachReviewPanel

@@ -24,8 +24,8 @@ import { SectionTitle } from "@/components/ui";
  */
 
 type Props = {
-  scope: "day" | "week";
-  /** The day, or the Monday of the week. Both ISO dates. */
+  scope: "day" | "week" | "month";
+  /** The day, the Monday of the week, or the month as YYYY-MM. */
   periodKey: string;
   /** What this period is called on screen. */
   label: string;
@@ -96,7 +96,7 @@ export function CoachReviewPanel({
     >
       <div className={columns ? "min-[900px]:col-span-2" : ""}>
         <SectionTitle aside={updatedAt ? `saved ${updatedAt}` : null}>
-          {scope === "week" ? `Coach review · ${label}` : "Coach review"}
+          {scope === "day" ? "Coach review" : `Coach review · ${label}`}
         </SectionTitle>
       </div>
 
@@ -144,9 +144,9 @@ export function CoachReviewPanel({
             disabled={!canWrite || busy}
             rows={content ? 16 : 6}
             placeholder={
-              scope === "week"
-                ? "Paste the weekly review here. Headings, bullets and tables are kept."
-                : "Paste the coach's review of today here."
+              scope === "day"
+                ? "Paste the coach's review of today here."
+                : `Paste the ${scope === "week" ? "weekly" : "monthly"} review here. Headings, bullets and tables are kept.`
             }
             onChange={(event) => setDraft(event.target.value)}
             className="w-full rounded-[var(--radius)] border border-border bg-surface px-3 py-2 font-mono text-[12px] leading-snug"

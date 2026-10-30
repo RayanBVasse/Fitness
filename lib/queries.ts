@@ -155,12 +155,16 @@ export async function getReferenceData() {
  * unique constraint the write path upserts on — reading it the same way means
  * the screen cannot show two reviews where the database allows only one.
  */
-async function readReview(scope: "day" | "week", key: string): Promise<CoachReview | null> {
+export async function readReview(
+  scope: "day" | "week" | "month",
+  key: string,
+): Promise<CoachReview | null> {
+  const prefix = { day: "daily", week: "weekly", month: "monthly" }[scope];
   const result = await safeRead<CoachReview[]>((c) =>
     c
       .from("context_notes")
       .select<string, CoachReview>("id, content, anchor_date, period_label, updated_at")
-      .eq("external_source_id", `${scope === "week" ? "weekly" : "daily"}_review:${key}`)
+      .eq("external_source_id", `${prefix}_review:${key}`)
       .limit(1),
   );
   return result.data?.[0] ?? null;
@@ -1573,6 +1577,9 @@ export async function getProgress(days: number | null): Promise<ProgressData> {
       .from("context_notes")
       .select<string, CoachReview>("id, content, anchor_date, period_label, updated_at")
       .eq("note_type", "assistant_review")
+      // By id, not by period_label: a monthly review carries a period label
+      // too, and matching on that alone listed months among the weeks.
+      .like("external_source_id", "weekly_review:%")
       .not("period_label", "is", null)
       .gte("period_label", from)
       .order("period_label", { ascending: false }),

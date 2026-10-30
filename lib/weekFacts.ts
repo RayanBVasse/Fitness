@@ -82,9 +82,18 @@ export function addDays(date: string, days: number): string {
   return new Date(Date.parse(date) + days * 86400000).toISOString().slice(0, 10);
 }
 
-export async function getWeekFacts(weekStart: string): Promise<WeekFacts> {
-  const weekEnd = addDays(weekStart, 6);
-  const matchFrom = addDays(weekStart, -28);
+/**
+ * The same read over any range.
+ *
+ * A week and a month differ only in where the window starts and how far
+ * back the hypertrophy history reaches, so they share this rather than
+ * keeping two copies of the same nine queries in step with each other.
+ */
+export async function getRangeFacts(
+  weekStart: string,
+  weekEnd: string,
+  matchFrom: string,
+): Promise<WeekFacts> {
 
   const [blocks, sets, entries, metricRows, defs, noteRows, experiments, reference, attemptRows] =
     await Promise.all([
@@ -276,4 +285,9 @@ export async function getWeekFacts(weekStart: string): Promise<WeekFacts> {
     importedRows,
     error: blocks.error ?? sets.error ?? entries.error,
   };
+}
+
+/** One ISO week, Monday to Sunday, with four weeks of history behind it. */
+export async function getWeekFacts(weekStart: string): Promise<WeekFacts> {
+  return getRangeFacts(weekStart, addDays(weekStart, 6), addDays(weekStart, -28));
 }
