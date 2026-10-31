@@ -35,6 +35,9 @@ import {
  * unsaved one, and the one thing worse than a blank field is a filled-in
  * field whose value never reached the database.
  *
+ * It sits open. Two taps to reach a slider meant the check-in that has to
+ * take thirty seconds started with a question about whether to start it.
+ *
  * The day's notes sit at the foot, read-only. They are written where they
  * belong - in a workstream, or against the day - and shown here because the
  * check-in is where you reconstruct how the day went.
@@ -64,7 +67,6 @@ export function DailyCheckIn({
   const router = useRouter();
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
@@ -118,40 +120,13 @@ export function DailyCheckIn({
     });
   }
 
-  // Collapsed by default. At the gym the primary action is starting a session,
-  // and eight sliders between it and the top of the screen would bury it.
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex w-full items-center justify-between gap-3 text-left"
-      >
-        <span>
-          <span className="block text-[11px] font-bold uppercase tracking-[0.08em] text-text-dim">
-            Daily check-in
-          </span>
-          <span className="tnum text-sm text-text-faint">
-            {recorded > 0 ? `${recorded} recorded` : "Nothing recorded"}
-          </span>
-        </span>
-        <span
-          className="shrink-0 rounded-[var(--radius)] border border-border px-3 py-2 text-sm font-semibold"
-          style={{ color: "var(--accent)" }}
-        >
-          {recorded > 0 ? "Edit" : "Add"}
-        </span>
-      </button>
-    );
-  }
-
   return (
     <div>
       <SectionTitle
         aside={
-          <button type="button" onClick={() => setOpen(false)} className="underline underline-offset-2">
-            Close
-          </button>
+          <span className="tnum">
+            {recorded > 0 ? `${recorded} recorded` : "Nothing recorded yet"}
+          </span>
         }
       >
         Daily check-in

@@ -140,10 +140,8 @@ export function TodayScreen({
   // Most days have one visit. When there are two, the latest is the one being
   // logged into, and the other stays reachable rather than hidden.
   const [activeId, setActiveId] = useState<string | null>(null);
-  // The check-in opens from the header instead of holding a card open
-  // all day, and the tab is held here so the scoreboard tiles and the
-  // logger cannot show different workstreams as the active one.
-  const [checkInOpen, setCheckInOpen] = useState(false);
+  // The tab is held here so the scoreboard tiles and the logger cannot
+  // show different workstreams as the active one.
   const [tab, setTab] = useState<Workstream | null>(null);
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -189,19 +187,6 @@ export function TodayScreen({
         </div>
 
         <div className="flex flex-col items-end gap-2">
-          {metricDefs.length > 0 ? (
-            <div className="flex items-center gap-2">
-              <span className="tnum text-[11px] text-text-dim">
-                {metrics.length > 0
-                  ? `${metrics.length} recorded`
-                  : "Check-in not answered"}
-              </span>
-              <Chip size="sm" on={checkInOpen} onClick={() => setCheckInOpen((v) => !v)}>
-                {checkInOpen ? "Close" : "Edit"}
-              </Chip>
-            </div>
-          ) : null}
-
           {/* The only gym control. With a session open it records where you
               are; without one it is the gym the next session will start at.
               It used to do the second thing only, while a card further down
@@ -240,10 +225,10 @@ export function TodayScreen({
         </div>
       </header>
 
-      {/* Opened from the header rather than sitting open all day. It still
-          saves as you move a slider — you asked for no save button, and a
-          dialog would have put one back. */}
-      {checkInOpen && metricDefs.length > 0 ? (
+      {/* Open. Sleep and soreness are answered once, early, and a control
+          that hides the question is a control that postpones it. It saves
+          as you tap — no save button, and no dialog to put one back. */}
+      {metricDefs.length > 0 ? (
         <Card>
           <DailyCheckIn
             date={date}
@@ -298,32 +283,21 @@ export function TodayScreen({
         </Card>
       ) : !session ? (
         <Card>
-          <SectionTitle>No session today</SectionTitle>
-          <div className="space-y-3">
-            <div>
-              <div className="mb-1.5 text-[11px] uppercase tracking-wide text-text-faint">
-                Gym
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {gyms.map((gym) => (
-                  <button
-                    key={gym.id}
-                    type="button"
-                    onClick={() => setGymId(gym.id === gymId ? null : gym.id)}
-                    aria-pressed={gymId === gym.id}
-                    className="min-h-[42px] rounded-[var(--radius)] border px-2 text-sm font-semibold"
-                    style={{
-                      borderColor: gymId === gym.id ? "var(--accent)" : "var(--border)",
-                      color: gymId === gym.id ? "var(--accent)" : "var(--text)",
-                      background: "var(--surface-2)",
-                    }}
-                  >
-                    {gym.name}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {/* The gym grid that used to sit here is gone: the header chips
+              choose it, and two controls for one fact drift apart. What the
+              header has chosen is restated, because Start session acts on
+              it and a silent default is the wrong kind of quiet. */}
+          <SectionTitle
+            aside={
+              gymId === null
+                ? "No gym chosen"
+                : `Starts at ${gyms.find((g) => g.id === gymId)?.name ?? "the chosen gym"}`
+            }
+          >
+            No session today
+          </SectionTitle>
 
+          <div className="flex flex-wrap items-stretch gap-2">
             <button
               type="button"
               disabled={!canWrite || busy}
@@ -337,7 +311,7 @@ export function TodayScreen({
                   });
                 })
               }
-              className="min-h-[52px] w-full rounded-[var(--radius)] text-base font-bold disabled:opacity-40"
+              className="min-h-[44px] flex-1 basis-[170px] rounded-[var(--radius)] px-4 text-sm font-bold disabled:opacity-40"
               style={{ background: "var(--accent)", color: "var(--accent-text)" }}
             >
               Start session
@@ -360,18 +334,11 @@ export function TodayScreen({
                     // The gym and the tab you land on, not the blocks. Copying
                     // blocks would make today claim yesterday's workstreams
                     // before anything had been recorded.
-                    // The work area opens on the last visit's first
-                    // workstream; nothing to set here.
                   })
                 }
-                className="min-h-[48px] w-full rounded-[var(--radius)] border border-border text-sm font-semibold disabled:opacity-40"
+                className="min-h-[44px] flex-1 basis-[170px] rounded-[var(--radius)] border border-border px-4 text-sm font-semibold disabled:opacity-40"
               >
-                Repeat previous session
-                <span className="ml-1 font-normal text-text-faint">
-                  {lastSession.gym ?? "no gym"} ·{" "}
-                  {(lastSession.workstreams ?? []).map((w) => WORKSTREAM_LABELS[w]).join(", ") ||
-                    "no workstreams"}
-                </span>
+                Repeat previous
               </button>
             ) : null}
 
@@ -385,11 +352,22 @@ export function TodayScreen({
                   await write({ action: "set_day_status", date, status: "rest" });
                 })
               }
-              className="min-h-[44px] w-full rounded-[var(--radius)] border border-dashed border-border text-sm font-semibold text-text-dim disabled:opacity-40"
+              className="min-h-[44px] flex-1 basis-[150px] rounded-[var(--radius)] border border-dashed border-border px-4 text-sm font-semibold text-text-dim disabled:opacity-40"
             >
-              Mark today as a rest day
+              Mark as rest day
             </button>
           </div>
+
+          {/* What Repeat would actually do. It was a subtitle inside the
+              button, which is what made the button tall. */}
+          {lastSession ? (
+            <p className="mt-2 text-[11px] leading-snug text-text-faint">
+              Repeat opens a session at {lastSession.gym ?? "no gym"} ·{" "}
+              {(lastSession.workstreams ?? []).map((w) => WORKSTREAM_LABELS[w]).join(", ") ||
+                "no workstreams"}
+              . It carries the gym over, not the sets.
+            </p>
+          ) : null}
         </Card>
       ) : (
         <>
