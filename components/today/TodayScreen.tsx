@@ -470,7 +470,6 @@ export function TodayScreen({
           content={review?.content ?? null}
           updatedAt={reviewSavedAt}
           brief={brief}
-          columns
           canWrite={canWrite}
         />
       </Card>
