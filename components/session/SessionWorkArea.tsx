@@ -7,6 +7,7 @@ import { CalisthenicsLogger } from "@/components/today/CalisthenicsLogger";
 import { DayNotes, type NoteSubject } from "@/components/today/DayNotes";
 import { DayPerformance } from "@/components/today/DayPerformance";
 import { Card, wsColour } from "@/components/ui";
+import styles from "./SessionWorkArea.module.css";
 import {
   WORKSTREAM_LABELS,
   type AssistanceType,
@@ -33,7 +34,7 @@ import {
 
 /**
  * One session's work area: three tabs, three loggers, the notes attached to
- * each, and the day's totals underneath.
+ * each, and the session's totals alongside on wider screens.
  *
  * Shared between Today and any past date. A session is a session — correcting
  * a mis-tapped rep is the same operation whether you notice it at 07:00 or
@@ -176,6 +177,8 @@ export function SessionWorkArea({
   }
 
   const hue = wsColour(tab);
+  const hasPerformance =
+    snatchBlocks.length > 0 || hypertrophySets.length > 0 || calisthenicsEntries.length > 0;
 
   /**
    * What each tab's notes can be about: the exercises and variations this
@@ -211,7 +214,7 @@ export function SessionWorkArea({
   ];
 
   return (
-    <>
+    <div className={`${styles.layout} ${hasPerformance ? styles.withSummary : ""}`}>
       {/* One work area, three tabs. Selecting a tab records nothing: the
           block for a workstream is created by its first set, lift or skill
           entry, server-side. The inactive panels stay mounted and are merely
@@ -226,7 +229,7 @@ export function SessionWorkArea({
             active one is solid in its own colour and the other two sit in
             their tints, so the tab and the tile above it read as the same
             thing. */}
-        <div role="tablist" aria-label="Workstream" className="mb-3 grid grid-cols-3 gap-2">
+        <div role="tablist" aria-label="Workstream" className={`mb-3 grid grid-cols-3 gap-2 ${styles.tabs}`}>
           {WORKSTREAMS.map((workstream) => {
             const on = tab === workstream;
             return (
@@ -346,18 +349,20 @@ export function SessionWorkArea({
         </div>
       </Card>
 
-      <Card>
-        <DayPerformance
-          snatchBlocks={snatchBlocks}
-          hypertrophySets={hypertrophySets}
-          calisthenicsEntries={calisthenicsEntries}
-          calisthenicsAttempts={calisthenicsAttempts}
-          variations={variations}
-          exercises={exercises}
-          muscleGroups={muscleGroups}
-          title={performanceTitle}
-        />
-      </Card>
-    </>
+      {hasPerformance ? (
+        <Card>
+          <DayPerformance
+            snatchBlocks={snatchBlocks}
+            hypertrophySets={hypertrophySets}
+            calisthenicsEntries={calisthenicsEntries}
+            calisthenicsAttempts={calisthenicsAttempts}
+            variations={variations}
+            exercises={exercises}
+            muscleGroups={muscleGroups}
+            title={performanceTitle}
+          />
+        </Card>
+      ) : null}
+    </div>
   );
 }
