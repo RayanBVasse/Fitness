@@ -9,6 +9,7 @@ import {
   NOTE_CATEGORIES,
   NOTE_CATEGORY_LABELS,
   WORKSTREAM_NOTE_CATEGORIES,
+  WORKSTREAM_LABELS,
   type ContextNote,
   type NoteCategory,
   type Workstream,
@@ -59,6 +60,10 @@ type Props = {
   notes: ContextNote[];
   /** What this workstream has on record today. Empty for a day's note. */
   subjects?: NoteSubject[];
+  /** The single day-wide reading and editing surface. */
+  allWorkstreams?: boolean;
+  /** Keep an add-note shortcut beside a logger without repeating saved notes. */
+  composerOnly?: boolean;
   canWrite: boolean;
 };
 
@@ -72,7 +77,10 @@ function subjectName(subjects: NoteSubject[], note: ContextNote): string | null 
   return found?.name ?? null;
 }
 
-export function DayNotes({ date, sessionId, workstream, notes, subjects = [], canWrite }: Props) {
+export function DayNotes({
+  date, sessionId, workstream, notes, subjects = [],
+  allWorkstreams = false, composerOnly = false, canWrite,
+}: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -80,18 +88,29 @@ export function DayNotes({ date, sessionId, workstream, notes, subjects = [], ca
   const [category, setCategory] = useState<NoteCategory>("observation");
   const [important, setImportant] = useState(false);
   const [subject, setSubject] = useState<NoteSubject | null>(null);
+  const [editingWorkstream, setEditingWorkstream] = useState<Workstream | null>(null);
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   const mine = notes.filter((n) =>
-    workstream ? n.workstream === workstream : n.workstream === null,
+    allWorkstreams || (workstream ? n.workstream === workstream : n.workstream === null),
   );
-  const hue = workstream ? wsColour(workstream) : "var(--accent)";
-  const offered = workstream ? WORKSTREAM_NOTE_CATEGORIES : DAY_NOTE_CATEGORIES;
+  const editorWorkstream = editingId ? editingWorkstream : workstream;
+  const hue = editorWorkstream ? wsColour(editorWorkstream) : "var(--accent)";
+  const offered = editorWorkstream ? WORKSTREAM_NOTE_CATEGORIES : DAY_NOTE_CATEGORIES;
+  const editorSubjects = allWorkstreams
+    ? subjects.filter((s) =>
+        editorWorkstream === "hypertrophy"
+          ? s.kind === "exercise"
+          : editorWorkstream === "calisthenics" && s.kind === "skill",
+      )
+    : subjects;
 
   function reset() {
+    setError(null);
     setOpen(false);
     setEditingId(null);
+    setEditingWorkstream(null);
     setContent("");
     setCategory("observation");
     setImportant(false);
@@ -100,6 +119,7 @@ export function DayNotes({ date, sessionId, workstream, notes, subjects = [], ca
 
   /** Open the composer on one topic. */
   function start(next: NoteCategory) {
+    setError(null);
     setEditingId(null);
     setContent("");
     setImportant(false);
@@ -152,7 +172,9 @@ export function DayNotes({ date, sessionId, workstream, notes, subjects = [], ca
   }
 
   function edit(note: ContextNote) {
+    setError(null);
     setEditingId(note.id);
+    setEditingWorkstream(note.workstream);
     setContent(note.content);
     setCategory(
       (NOTE_CATEGORIES as readonly string[]).includes(note.category)
@@ -165,7 +187,11 @@ export function DayNotes({ date, sessionId, workstream, notes, subjects = [], ca
         (s) =>
           (s.kind === "exercise" && s.id === note.exercise_id) ||
           (s.kind === "skill" && s.id === note.skill_variation_id),
-      ) ?? null,
+      ) ?? (note.exercise_id !== null
+        ? { kind: "exercise", id: note.exercise_id, name: "Linked exercise" }
+        : note.skill_variation_id !== null
+          ? { kind: "skill", id: note.skill_variation_id, name: "Linked skill" }
+          : null),
     );
     setOpen(true);
   }
@@ -177,179 +203,200 @@ export function DayNotes({ date, sessionId, workstream, notes, subjects = [], ca
     });
   }
 
-  return (
-    <div className={workstream ? "" : "space-y-3"}>
-      {workstream ? null : (
-        <SectionTitle aside={mine.length > 0 ? `${mine.length} today` : null}>
-          Notes for the Coach
-        </SectionTitle>
-      )}
+  const editor = (
+    <div
+      className="rounded-[var(--radius)] border p-3"
+      style={{ borderColor: hue, background: "var(--surface-2)" }}
+    >
+      <textarea
+        autoFocus
+        aria-label="Note for the Coach"
+        maxLength={4000}
+        value={content}
+        disabled={!canWrite || busy}
+        rows={4}
+        placeholder={
+          editorWorkstream
+            ? "What happened, what you noticed, what you changed."
+            : "The day, the gym, how it went. Anything the Coach should know."
+        }
+        onChange={(event) => setContent(event.target.value)}
+        className="w-full rounded-[var(--radius)] border border-border bg-surface px-3 py-2 text-sm"
+      />
 
-      {mine.length > 0 ? (
-        <ul className="space-y-1.5">
-          {mine.map((note) => (
-            <li
-              key={note.id}
-              className="rounded-[var(--radius)] border px-3 py-2"
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {offered.map((value) => {
+          const on = value === category;
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setCategory(value)}
+              aria-pressed={on}
+              className="min-h-[34px] rounded-full border px-2.5 text-[11px] font-semibold"
               style={{
-                borderColor: note.tags.includes("important") ? hue : "var(--border)",
+                borderColor: on ? hue : `color-mix(in oklab, ${hue} 32%, transparent)`,
+                background: on ? `color-mix(in oklab, ${hue} 8%, transparent)` : "transparent",
+                color: on ? hue : "var(--text-dim)",
               }}
             >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[10px] uppercase tracking-wide" style={{ color: hue }}>
-                  {NOTE_CATEGORY_LABELS[note.category as NoteCategory] ?? note.category}
-                  {subjectName(subjects, note) ? ` · ${subjectName(subjects, note)}` : ""}
-                  {note.tags.includes("important") ? " · important" : ""}
-                </span>
-                {/* text-dim, not text-faint: these are controls, and faint
-                    falls below 4.5:1 on the dark surface. */}
-                <span className="flex shrink-0 gap-2 text-[11px] text-text-dim">
-                  <button
-                    type="button"
-                    disabled={!canWrite || busy}
-                    onClick={() => edit(note)}
-                    className="underline underline-offset-2 disabled:no-underline"
-                  >
-                    edit
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canWrite || busy}
-                    onClick={() => remove(note.id)}
-                    className="underline underline-offset-2 disabled:no-underline"
-                  >
-                    delete
-                  </button>
-                </span>
-              </div>
-              <p className="mt-0.5 whitespace-pre-wrap text-sm leading-snug">{note.content}</p>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+              {NOTE_CATEGORY_LABELS[value]}
+            </button>
+          );
+        })}
+      </div>
 
-      {open ? (
-        <div
-          className="rounded-[var(--radius)] border p-3"
-          style={{ borderColor: hue, background: "var(--surface-2)" }}
-        >
-          <textarea
-            autoFocus
-            value={content}
-            disabled={!canWrite || busy}
-            rows={4}
-            placeholder={
-              workstream
-                ? "What happened, what you noticed, what you changed."
-                : "The day, the gym, how it went. Anything the Coach should know."
-            }
-            onChange={(event) => setContent(event.target.value)}
-            className="w-full rounded-[var(--radius)] border border-border bg-surface px-3 py-2 text-sm"
-          />
-
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {offered.map((value) => {
-              const on = value === category;
+      {/* What it is about. Optional: most notes are about the session,
+          and a note forced to name an exercise would start naming one
+          it is not about. */}
+      {editorSubjects.length > 0 ? (
+        <div className="mt-2">
+          <div className="mb-1 text-[10px] uppercase tracking-wide text-text-dim">
+            About
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {editorSubjects.map((s) => {
+              const on = subject?.kind === s.kind && subject.id === s.id;
               return (
                 <button
-                  key={value}
+                  key={`${s.kind}-${s.id}`}
                   type="button"
-                  onClick={() => setCategory(value)}
+                  onClick={() => setSubject(on ? null : s)}
                   aria-pressed={on}
                   className="min-h-[34px] rounded-full border px-2.5 text-[11px] font-semibold"
                   style={{
                     borderColor: on ? hue : `color-mix(in oklab, ${hue} 32%, transparent)`,
-                    background: on ? `color-mix(in oklab, ${hue} 8%, transparent)` : "transparent",
+                    background: on
+                      ? `color-mix(in oklab, ${hue} 8%, transparent)`
+                      : "transparent",
                     color: on ? hue : "var(--text-dim)",
                   }}
                 >
-                  {NOTE_CATEGORY_LABELS[value]}
+                  {s.name}
                 </button>
               );
             })}
           </div>
-
-          {/* What it is about. Optional: most notes are about the session,
-              and a note forced to name an exercise would start naming one
-              it is not about. */}
-          {subjects.length > 0 ? (
-            <div className="mt-2">
-              <div className="mb-1 text-[10px] uppercase tracking-wide text-text-dim">
-                About
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {subjects.map((s) => {
-                  const on = subject?.kind === s.kind && subject.id === s.id;
-                  return (
-                    <button
-                      key={`${s.kind}-${s.id}`}
-                      type="button"
-                      onClick={() => setSubject(on ? null : s)}
-                      aria-pressed={on}
-                      className="min-h-[34px] rounded-full border px-2.5 text-[11px] font-semibold"
-                      style={{
-                        borderColor: on ? hue : `color-mix(in oklab, ${hue} 32%, transparent)`,
-                        background: on
-                          ? `color-mix(in oklab, ${hue} 8%, transparent)`
-                          : "transparent",
-                        color: on ? hue : "var(--text-dim)",
-                      }}
-                    >
-                      {s.name}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="mt-1 text-[10px] leading-snug text-text-faint">
-                Naming one files the note under that exercise on Progress, where you read it
-                back beside the loads. Leave it for a note about the session.
-              </p>
-            </div>
-          ) : null}
-
-          <div className="mt-2 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setImportant((v) => !v)}
-              aria-pressed={important}
-              className="min-h-[34px] rounded-[var(--radius)] border px-2.5 text-[11px] font-semibold"
-              style={{
-                borderColor: important ? hue : "var(--border)",
-                color: important ? hue : "var(--text-dim)",
-              }}
-            >
-              {important ? "★ Important" : "☆ Mark important"}
-            </button>
-            <span className="text-[10px] leading-snug text-text-faint">
-              Kept in front of the Coach across sessions.
-            </span>
-          </div>
-
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              disabled={!canWrite || busy || !content.trim()}
-              onClick={save}
-              className="min-h-[44px] flex-1 rounded-[var(--radius)] text-sm font-bold disabled:opacity-40"
-              style={{ background: hue, color: "var(--accent-text)" }}
-            >
-              {busy ? "Saving…" : editingId ? "Save changes" : "Save note"}
-            </button>
-            <button
-              type="button"
-              onClick={reset}
-              className="min-h-[44px] rounded-[var(--radius)] border border-border px-3 text-sm font-semibold"
-            >
-              Cancel
-            </button>
-          </div>
-
-          <p className="mt-2 text-[10px] leading-snug text-text-faint">
-            Recorded as a report in your words, never as a measurement. Other people are
-            replaced by their role before anything reaches the Coach.
+          <p className="mt-1 text-[10px] leading-snug text-text-faint">
+            Naming one files the note under that exercise on Progress, where you read it
+            back beside the loads. Leave it for a note about the session.
           </p>
         </div>
-      ) : workstream ? (
+      ) : null}
+
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setImportant((v) => !v)}
+          aria-pressed={important}
+          className="min-h-[34px] rounded-[var(--radius)] border px-2.5 text-[11px] font-semibold"
+          style={{
+            borderColor: important ? hue : "var(--border)",
+            color: important ? hue : "var(--text-dim)",
+          }}
+        >
+          {important ? "★ Important" : "☆ Mark important"}
+        </button>
+        <span className="text-[10px] leading-snug text-text-faint">
+          Kept in front of the Coach across sessions.
+        </span>
+      </div>
+
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          disabled={!canWrite || busy || !content.trim()}
+          onClick={save}
+          className="min-h-[44px] flex-1 rounded-[var(--radius)] text-sm font-bold disabled:opacity-40"
+          style={{ background: hue, color: "var(--accent-text)" }}
+        >
+          {busy ? "Saving…" : editingId ? "Save changes" : "Save note"}
+        </button>
+        <button
+          type="button"
+          onClick={reset}
+          className="min-h-[44px] rounded-[var(--radius)] border border-border px-3 text-sm font-semibold"
+        >
+          Cancel
+        </button>
+      </div>
+
+      <p className="mt-2 text-[10px] leading-snug text-text-faint">
+        Recorded as a report in your words, never as a measurement. Other people are
+        replaced by their role before anything reaches the Coach.
+      </p>
+    </div>
+  );
+
+  return (
+    <div className={workstream ? "" : "space-y-3"}>
+      {workstream ? null : (
+        <SectionTitle aside={mine.length > 0 ? `${mine.length} note${mine.length === 1 ? "" : "s"}` : null}>
+          {allWorkstreams ? "Written about this day" : "Notes for the Coach"}
+        </SectionTitle>
+      )}
+
+      {allWorkstreams ? (
+        <p className="text-[11px] text-text-dim">
+          All daily and workstream notes are for the Coach and included in the day’s coach brief.
+        </p>
+      ) : null}
+
+      {!composerOnly && mine.length > 0 ? (
+        <ul className="space-y-1.5">
+          {mine.map((note) => {
+            const noteHue = note.workstream ? wsColour(note.workstream) : "var(--border)";
+            return (
+              <li
+                key={note.id}
+                className="overflow-hidden rounded-[var(--radius)] px-3 py-2"
+                style={{
+                  borderLeft: `4px solid ${noteHue}`,
+                  background: note.workstream
+                    ? `color-mix(in oklab, ${noteHue} 8%, var(--surface-2))`
+                    : "var(--surface-2)",
+                }}
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[10px] uppercase tracking-wide" style={{ color: note.workstream ? noteHue : "var(--text-dim)" }}>
+                    {allWorkstreams && note.workstream ? `${WORKSTREAM_LABELS[note.workstream]} · ` : ""}
+                    {NOTE_CATEGORY_LABELS[note.category as NoteCategory] ?? note.category}
+                    {subjectName(subjects, note) ? ` · ${subjectName(subjects, note)}` : ""}
+                    {note.tags.includes("important") ? " · important" : ""}
+                  </span>
+                  {/* text-dim, not text-faint: these are controls, and faint
+                      falls below 4.5:1 on the dark surface. */}
+                  <span className="flex shrink-0 gap-2 text-[11px] text-text-dim">
+                    <button
+                      type="button"
+                      disabled={!canWrite || busy}
+                      onClick={() => edit(note)}
+                      aria-label={`Edit ${NOTE_CATEGORY_LABELS[note.category as NoteCategory] ?? note.category} note${note.workstream ? ` (${WORKSTREAM_LABELS[note.workstream]})` : ""}`}
+                      className="underline underline-offset-2 disabled:no-underline"
+                    >
+                      edit
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canWrite || busy}
+                      onClick={() => remove(note.id)}
+                      aria-label={`Delete ${NOTE_CATEGORY_LABELS[note.category as NoteCategory] ?? note.category} note${note.workstream ? ` (${WORKSTREAM_LABELS[note.workstream]})` : ""}`}
+                      className="underline underline-offset-2 disabled:no-underline"
+                    >
+                      delete
+                    </button>
+                  </span>
+                </div>
+                {editingId === note.id && open ? editor : (
+                  <p className="mt-0.5 whitespace-pre-wrap text-sm leading-snug">{note.content}</p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+
+      {open ? (editingId ? null : editor) : workstream ? (
         <button
           type="button"
           disabled={!canWrite || busy}

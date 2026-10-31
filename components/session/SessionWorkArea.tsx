@@ -280,6 +280,7 @@ export function SessionWorkArea({
           />
           <div className="mt-3">
             <DayNotes
+              composerOnly
               date={date}
               sessionId={sessionId}
               workstream="snatch"
@@ -306,6 +307,7 @@ export function SessionWorkArea({
           />
           <div className="mt-3">
             <DayNotes
+              composerOnly
               date={date}
               sessionId={sessionId}
               workstream="hypertrophy"
@@ -332,6 +334,7 @@ export function SessionWorkArea({
           />
           <div className="mt-3">
             <DayNotes
+              composerOnly
               date={date}
               sessionId={sessionId}
               workstream="calisthenics"

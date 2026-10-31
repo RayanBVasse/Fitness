@@ -235,11 +235,25 @@ export function TodayScreen({
             defs={metricDefs}
             saved={metrics}
             lastValues={lastMetricValues}
-            notes={notes}
             canWrite={canWrite}
           />
         </Card>
       ) : null}
+
+      <Card>
+        <DayNotes
+          key={date}
+          date={date}
+          sessionId={session?.id ?? null}
+          notes={notes}
+          allWorkstreams
+          subjects={[
+            ...exercises.filter((e) => hypertrophySets.some((row) => row.exercise_id === e.id) || notes.some((n) => n.exercise_id === e.id)).map((e) => ({ kind: "exercise" as const, id: e.id, name: e.name })),
+            ...skillVariations.filter((s) => calisthenicsEntries.some((row) => row.skill_variation_id === s.id) || notes.some((n) => n.skill_variation_id === s.id)).map((s) => ({ kind: "skill" as const, id: s.id, name: s.name })),
+          ]}
+          canWrite={canWrite}
+        />
+      </Card>
 
       {session ? (
         <Scoreboard
@@ -399,10 +413,7 @@ export function TodayScreen({
             </Card>
           ) : null}
 
-          {/* The logger and the margin. Notes sit beside the work rather
-              than under it, where a day's writing was easy to scroll past
-              and easier to forget. */}
-          <div className="grid grid-cols-1 items-start gap-3.5 min-[900px]:grid-cols-[1.45fr_1fr]">
+          {/* Saved notes live once, in the day-wide section above. */}
           <SessionWorkArea
             date={date}
             sessionId={session.id}
@@ -439,18 +450,6 @@ export function TodayScreen({
             canWrite={canWrite}
           />
 
-          <aside
-            className="p-3.5"
-            style={{ background: "var(--margin-bg)", borderRadius: 14 }}
-          >
-            <DayNotes
-              date={date}
-              sessionId={session.id}
-              notes={notes}
-              canWrite={canWrite}
-            />
-          </aside>
-          </div>
         </>
       )}
 
@@ -458,14 +457,6 @@ export function TodayScreen({
         <p className="text-sm" style={{ color: "var(--missed)" }}>
           {error}
         </p>
-      ) : null}
-
-      {/* Without a session there is no margin to put them in, so the day's
-          notes keep a card of their own. */}
-      {!session ? (
-        <Card>
-          <DayNotes date={date} sessionId={null} notes={notes} canWrite={canWrite} />
-        </Card>
       ) : null}
 
       {/* Last on the page, because it is the last thing that happens: the

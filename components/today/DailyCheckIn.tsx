@@ -3,14 +3,10 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
-import { SectionTitle, wsColour } from "@/components/ui";
+import { SectionTitle } from "@/components/ui";
 import {
-  NOTE_CATEGORY_LABELS,
-  WORKSTREAM_LABELS,
-  type ContextNote,
   type DailyMetric,
   type DailyMetricDef,
-  type NoteCategory,
 } from "@/lib/types";
 
 /**
@@ -38,9 +34,7 @@ import {
  * It sits open. Two taps to reach a slider meant the check-in that has to
  * take thirty seconds started with a question about whether to start it.
  *
- * The day's notes sit at the foot, read-only. They are written where they
- * belong - in a workstream, or against the day - and shown here because the
- * check-in is where you reconstruct how the day went.
+ * Daily and workstream notes have one editable section on the day page.
  */
 
 type Props = {
@@ -49,8 +43,6 @@ type Props = {
   saved: DailyMetric[];
   /** The last value recorded before this day, shown as a reference only. */
   lastValues?: (DailyMetric & { metric_date: string })[];
-  /** Everything written about this day, shown here but edited elsewhere. */
-  notes?: ContextNote[];
   canWrite: boolean;
 };
 
@@ -61,7 +53,6 @@ export function DailyCheckIn({
   defs,
   saved,
   lastValues = [],
-  notes = [],
   canWrite,
 }: Props) {
   const router = useRouter();
@@ -180,52 +171,6 @@ export function DailyCheckIn({
           </button>
         ) : null}
       </div>
-
-      {notes.length > 0 ? (
-        <div className="mt-4 border-t border-border pt-3">
-          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.08em] text-text-dim">
-            Written about this day
-          </div>
-          <ul className="space-y-1.5">
-            {notes.map((note) => {
-              // A note wears its workstream's colour, the same hue that
-              // workstream's figures carry below. Reading a stripe is faster
-              // than reading a label, and relating the two is the whole point
-              // of having them on one screen. A note about the day as a whole
-              // belongs to no workstream and stays neutral.
-              const hue = note.workstream ? wsColour(note.workstream) : "var(--border)";
-              return (
-                <li
-                  key={note.id}
-                  className="overflow-hidden rounded-[var(--radius)] px-3 py-2"
-                  style={{
-                    borderLeft: `4px solid ${hue}`,
-                    background: note.workstream
-                      ? `color-mix(in oklab, ${hue} 8%, var(--surface-2))`
-                      : "var(--surface-2)",
-                  }}
-                >
-                  <div
-                    className="text-[10px] uppercase tracking-wide"
-                    style={{ color: note.workstream ? hue : "var(--text-dim)" }}
-                  >
-                    {note.workstream ? `${WORKSTREAM_LABELS[note.workstream]} \u00b7 ` : ""}
-                    {NOTE_CATEGORY_LABELS[note.category as NoteCategory] ?? note.category}
-                    {note.tags.includes("important") ? " \u00b7 important" : ""}
-                  </div>
-                  <p className="mt-0.5 whitespace-pre-wrap text-sm leading-snug">
-                    {note.content}
-                  </p>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="mt-2 text-[10px] leading-snug text-text-dim">
-            Shown here, edited where they were written — against the day, or inside a
-            workstream.
-          </p>
-        </div>
-      ) : null}
 
       {error ? (
         <p className="mt-2 text-sm" style={{ color: "var(--missed)" }}>
