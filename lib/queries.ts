@@ -71,7 +71,6 @@ export interface TodayData {
   lastSkillSettings: LastSkillSetting[];
   recentExerciseIds: number[];
   recentSkillVariationIds: number[];
-  attempts: SnatchAttempt[];
   lastSession: SessionSummary | null;
   /** Notes anchored to this day, both the day's own and each workstream's. */
   notes: ContextNote[];
@@ -171,18 +170,29 @@ export async function readReview(
 }
 
 export async function getToday(date = londonToday()): Promise<TodayData & { error: string | null }> {
-  const sessionResult = await safeRead<Session[]>((c) =>
-    c.from("sessions").select("*").eq("session_date", date).order("created_at", { ascending: true }),
-  );
-
-  const sessions = sessionResult.data ?? [];
-
-  const dayResult = await safeRead<DayRecord[]>((c) =>
-    c.from("days").select("*").eq("day", date).limit(1),
-  );
-  const day = dayResult.data?.[0] ?? null;
-
-  const [defsResult, metricsResult] = await Promise.all([
+  // None of these seven needs any of the others, so they go together. They
+  // used to be six awaits in a row, which cost six round trips to Supabase
+  // on every page load — and on every router.refresh(), which the loggers
+  // fire after each logged set. The depth that is real is three: the day's
+  // sessions, then the rows belonging to them, then the attempts within
+  // those rows.
+  const [
+    sessionResult,
+    dayResult,
+    defsResult,
+    metricsResult,
+    lastSessionResult,
+    notesResult,
+    review,
+  ] = await Promise.all([
+    safeRead<Session[]>((c) =>
+      c
+        .from("sessions")
+        .select("*")
+        .eq("session_date", date)
+        .order("created_at", { ascending: true }),
+    ),
+    safeRead<DayRecord[]>((c) => c.from("days").select("*").eq("day", date).limit(1)),
     safeRead<DailyMetricDef[]>((c) =>
       c.from("daily_metric_defs").select("*").eq("is_active", true).order("sort_order"),
     ),
@@ -193,34 +203,34 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
         .eq("metric_date", date)
         .eq("provenance", "logged"),
     ),
+    safeRead<SessionSummary[]>((c) =>
+      c
+        .from("v_session_summary")
+        .select("*")
+        .lt("session_date", date)
+        .order("session_date", { ascending: false })
+        .limit(1),
+    ),
+    safeRead<ContextNote[]>((c) =>
+      c
+        .from("context_notes")
+        .select<string, ContextNote>("*")
+        .eq("anchor_date", date)
+        // Notes written here, and the check-in text that 0015 folded in. The
+        // imported pack is excluded: it belongs to the review screen, not to a
+        // day's working surface. Leaving the folded rows out would have left
+        // them saved and invisible, which is the failure the fold existed to
+        // avoid.
+        .in("source_type", ["authored_in_app", "daily_check_in"])
+        .order("created_at", { ascending: true }),
+    ),
+    readReview("day", date),
   ]);
+
+  const sessions = sessionResult.data ?? [];
+  const day = dayResult.data?.[0] ?? null;
   const metricDefs = defsResult.data ?? [];
   const metrics = metricsResult.data ?? [];
-
-  const lastSessionResult = await safeRead<SessionSummary[]>((c) =>
-    c
-      .from("v_session_summary")
-      .select("*")
-      .lt("session_date", date)
-      .order("session_date", { ascending: false })
-      .limit(1),
-  );
-
-  const notesResult = await safeRead<ContextNote[]>((c) =>
-    c
-      .from("context_notes")
-      .select<string, ContextNote>("*")
-      .eq("anchor_date", date)
-      // Notes written here, and the check-in text that 0015 folded in. The
-      // imported pack is excluded: it belongs to the review screen, not to a
-      // day's working surface. Leaving the folded rows out would have left
-      // them saved and invisible, which is the failure the fold existed to
-      // avoid.
-      .in("source_type", ["authored_in_app", "daily_check_in"])
-      .order("created_at", { ascending: true }),
-  );
-
-  const review = await readReview("day", date);
 
   if (sessions.length === 0) {
     return {
@@ -241,7 +251,6 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
       recentExerciseIds: [],
       recentSkillVariationIds: [],
       snatchBlocks: [],
-      attempts: [],
       lastSession: lastSessionResult.data?.[0] ?? null,
       error: sessionResult.error,
     };
@@ -287,40 +296,34 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     ),
   ]);
 
-  // These two read the rows behind every snatch and calisthenics figure, so
-  // they have to run AFTER the blocks and entries they filter by. They were
-  // written above that destructure and threw a ReferenceError on every
-  // request; safeRead caught it and returned an empty list, so the attempts
-  // simply never appeared and nothing said why. Their errors are surfaced
-  // below for the same reason.
-  const snatchAttemptsResult = await safeRead<SnatchAttempt[]>((c) =>
-    c
-      .from("snatch_attempts")
-      .select<string, SnatchAttempt>("*")
-      .in(
-        "block_id",
-        (snatchBlocks.data ?? []).map((b) => b.id),
-      )
-      .order("ordinal"),
-  );
-
-  const attemptsResult = await safeRead<CalisthenicsAttempt[]>((c) =>
-    c
-      .from("calisthenics_attempts")
-      .select<string, CalisthenicsAttempt>("*")
-      .in(
-        "entry_id",
-        (calisthenicsEntries.data ?? []).map((e) => e.id),
-      )
-      .order("ordinal"),
-  );
-
-  const blockIds = (snatchBlocks.data ?? []).map((b) => b.id);
-  const attempts = blockIds.length
-    ? await safeRead<SnatchAttempt[]>((c) =>
-        c.from("snatch_attempts").select("*").in("block_id", blockIds).order("ordinal"),
-      )
-    : { data: [], error: null };
+  // These read the rows behind every snatch and calisthenics figure, so they
+  // have to run AFTER the blocks and entries they filter by — but not after
+  // each other. They were once written above that destructure and threw a
+  // ReferenceError on every request; safeRead caught it and returned an empty
+  // list, so the attempts simply never appeared and nothing said why. Their
+  // errors are surfaced below for the same reason.
+  const [snatchAttemptsResult, attemptsResult] = await Promise.all([
+    safeRead<SnatchAttempt[]>((c) =>
+      c
+        .from("snatch_attempts")
+        .select<string, SnatchAttempt>("*")
+        .in(
+          "block_id",
+          (snatchBlocks.data ?? []).map((b) => b.id),
+        )
+        .order("ordinal"),
+    ),
+    safeRead<CalisthenicsAttempt[]>((c) =>
+      c
+        .from("calisthenics_attempts")
+        .select<string, CalisthenicsAttempt>("*")
+        .in(
+          "entry_id",
+          (calisthenicsEntries.data ?? []).map((e) => e.id),
+        )
+        .order("ordinal"),
+    ),
+  ]);
 
   return {
     day,
@@ -340,7 +343,6 @@ export async function getToday(date = londonToday()): Promise<TodayData & { erro
     lastSkillSettings: lastSkill.data ?? [],
     recentExerciseIds: (recentExercises.data ?? []).map((r) => r.exercise_id),
     recentSkillVariationIds: (recentSkills.data ?? []).map((r) => r.skill_variation_id),
-    attempts: attempts.data ?? [],
     lastSession: lastSessionResult.data?.[0] ?? null,
     error:
       sessionResult.error ??
