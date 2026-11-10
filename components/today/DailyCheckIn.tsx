@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { SectionTitle, wsColour } from "@/components/ui";
@@ -29,11 +29,16 @@ import {
  * exactly 7 is a fiddly act of aim, and eight of them stacked full-width was a
  * screenful of scrolling for thirty seconds of honesty.
  *
- * Nothing is saved by pressing anything. A tap on a number is the record, as
- * it is everywhere else in this app; numbers typed and text written commit
- * when you leave the field. A Save button turns an answered question into an
- * unsaved one, and the one thing worse than a blank field is a filled-in
- * field whose value never reached the database.
+ * Edits are held locally and written once, by the Save button at the foot.
+ * It used to write per field, which meant a round trip and a full re-render
+ * of the day's screen for every tap — thirteen of them to fill this in, and
+ * long enough each time to be worth avoiding. One save sends only what
+ * changed.
+ *
+ * The risk a Save button brings is a filled-in field whose value never
+ * reached the database, so the count of unsaved answers is on screen the
+ * whole time, the button says how many it will write, and leaving the page
+ * with edits outstanding asks first.
  *
  * It sits open. Two taps to reach a slider meant the check-in that has to
  * take thirty seconds started with a question about whether to start it.
@@ -56,6 +61,21 @@ type Props = {
 
 type Draft = Record<string, { numeric: number | null; text: string | null }>;
 
+/** The metrics whose draft value differs from what is stored, as rows to write. */
+function changed(defs: DailyMetricDef[], draft: Draft, baseline: Draft) {
+  return defs
+    .filter((def) => {
+      const now = draft[def.slug] ?? { numeric: null, text: null };
+      const was = baseline[def.slug] ?? { numeric: null, text: null };
+      return now.numeric !== was.numeric || (now.text ?? "") !== (was.text ?? "");
+    })
+    .map((def) => ({
+      metric: def.slug,
+      value_numeric: draft[def.slug]?.numeric ?? null,
+      value_text: draft[def.slug]?.text ?? null,
+    }));
+}
+
 export function DailyCheckIn({
   date,
   defs,
@@ -68,7 +88,7 @@ export function DailyCheckIn({
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
 
   const initial = useMemo<Draft>(() => {
     const draft: Draft = {};
@@ -83,6 +103,19 @@ export function DailyCheckIn({
   }, [defs, saved]);
 
   const [draft, setDraft] = useState<Draft>(initial);
+  // What the draft is measured against: the values this screen last knew to
+  // be stored. Kept apart from `initial` so that data arriving from the
+  // server can be told apart from edits made here.
+  const [baseline, setBaseline] = useState<Draft>(initial);
+
+  if (baseline !== initial) {
+    // A refresh landed. Adopt it only when nothing here is unsaved —
+    // otherwise a value recorded on another device would overwrite what is
+    // half-answered on this screen.
+    const dirty = changed(defs, draft, baseline).length > 0;
+    setBaseline(initial);
+    if (!dirty) setDraft(initial);
+  }
 
   const quick = defs.filter((d) => d.in_quick_mode);
   const rest = defs.filter((d) => !d.in_quick_mode);
@@ -91,28 +124,40 @@ export function DailyCheckIn({
     (v) => v.numeric !== null || (v.text && v.text.trim()),
   ).length;
 
-  /**
-   * One field, one write. Sending the whole draft each time would rewrite
-   * every other dimension too, so a stale tab could quietly undo a value
-   * recorded on your phone an hour earlier.
-   */
+  /** A tap or a keystroke changes the draft and nothing else. */
   function set(
     slug: string,
     value: Partial<{ numeric: number | null; text: string | null }>,
   ) {
-    const next = { ...draft[slug], ...value };
-    setDraft((prev) => ({ ...prev, [slug]: next }));
+    setDraft((prev) => ({ ...prev, [slug]: { ...prev[slug], ...value } }));
+    setError(null);
+    setJustSaved(false);
+  }
+
+  // Only what differs from what is stored. Sending the whole draft would
+  // rewrite every other dimension too, so a tab left open since this morning
+  // could quietly undo a value recorded on your phone since.
+  const pending = changed(defs, draft, baseline);
+
+  // A filled-in field that never reached the database is the failure this
+  // design has to answer for, so closing the tab on one asks first.
+  useEffect(() => {
+    if (pending.length === 0) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [pending.length]);
+
+  function save() {
+    if (pending.length === 0) return;
     setError(null);
     startTransition(async () => {
       try {
-        await write({
-          action: "save_check_in",
-          date,
-          metrics: [
-            { metric: slug, value_numeric: next.numeric, value_text: next.text },
-          ],
-        });
-        setSavedAt(slug);
+        await write({ action: "save_check_in", date, metrics: pending });
+        // What was just written is the new baseline, so the count clears
+        // without waiting for the refresh to come back.
+        setBaseline(draft);
+        setJustSaved(true);
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -124,9 +169,15 @@ export function DailyCheckIn({
     <div>
       <SectionTitle
         aside={
-          <span className="tnum">
-            {recorded > 0 ? `${recorded} recorded` : "Nothing recorded yet"}
-          </span>
+          pending.length > 0 ? (
+            <span className="tnum font-semibold" style={{ color: "var(--missed)" }}>
+              {pending.length} unsaved
+            </span>
+          ) : (
+            <span className="tnum">
+              {recorded > 0 ? `${recorded} recorded` : "Nothing recorded yet"}
+            </span>
+          )
         }
       >
         Daily check-in
@@ -162,23 +213,44 @@ export function DailyCheckIn({
         })}
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <p className="text-[11px] leading-snug text-text-dim">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="min-w-[240px] flex-1 text-[11px] leading-snug text-text-dim">
           {busy
             ? "Saving\u2026"
-            : savedAt
-              ? "Saved as you go."
-              : "All optional. An untouched field stays unrecorded rather than becoming a zero; tap a selected number again to clear it."}
+            : pending.length > 0
+              ? "Not written yet. Nothing here reaches the record until you save."
+              : justSaved
+                ? "Saved."
+                : "All optional. An untouched field stays unrecorded rather than becoming a zero; tap a selected number again to clear it."}
         </p>
-        {rest.length > 0 ? (
+        <div className="flex shrink-0 items-center gap-2">
+          {rest.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setExpanded((e) => !e)}
+              className="min-h-[40px] rounded-[var(--radius)] border border-border px-3 text-sm font-semibold"
+            >
+              {expanded ? "Fewer" : `+${rest.length} more`}
+            </button>
+          ) : null}
+          {/* One write for the whole check-in. Disabled with nothing to
+              write, so a second press cannot repeat a save. */}
           <button
             type="button"
-            onClick={() => setExpanded((e) => !e)}
-            className="min-h-[40px] shrink-0 rounded-[var(--radius)] border border-border px-3 text-sm font-semibold"
+            onClick={save}
+            disabled={!canWrite || busy || pending.length === 0}
+            className="min-h-[40px] rounded-[var(--radius)] px-5 text-sm font-bold disabled:opacity-40"
+            style={{ background: "var(--accent)", color: "var(--accent-text)" }}
           >
-            {expanded ? "Fewer" : `+${rest.length} more`}
+            {busy
+              ? "Saving\u2026"
+              : pending.length > 0
+                ? `Save ${pending.length} change${pending.length === 1 ? "" : "s"}`
+                : justSaved
+                  ? "Saved"
+                  : "Save"}
           </button>
-        ) : null}
+        </div>
       </div>
 
       {notes.length > 0 ? (
@@ -382,6 +454,16 @@ function NumberField({
   disabled: boolean;
   onChange: (value: number | null) => void;
 }) {
+  const [text, setText] = useState(value === null ? "" : String(value));
+  const shown = value === null ? "" : String(value);
+  const [seen, setSeen] = useState(shown);
+  if (seen !== shown) {
+    // The stored value moved under us — a save landed, or the "last" hint
+    // was adopted. Take it, unless it is what we are already showing.
+    setSeen(shown);
+    if (Number(text) !== value) setText(shown);
+  }
+
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
@@ -394,29 +476,25 @@ function NumberField({
         <LastHint last={last} unit={def.unit} disabled={disabled} onAdopt={onChange} />
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
-        {/* Typed locally, written on blur or Enter. With nothing to press,
-            a write per keystroke would send "5", "54", "54." and "54.3" for
-            one bodyweight. */}
+        {/* Every keystroke reaches the draft. It used to wait for blur,
+            because each change was a write; now that saving is one press at
+            the foot, a number typed and left unblurred would simply have
+            gone missing from it. The raw text is kept so a half-typed
+            "54." is not rewritten under the cursor. */}
         <input
           id={`m-${def.slug}`}
           type="number"
           inputMode="decimal"
-          defaultValue={value ?? ""}
-          key={value ?? "empty"}
+          value={text}
           min={def.min_value ?? undefined}
           max={def.max_value ?? undefined}
           step={def.step ?? "any"}
           disabled={disabled}
           placeholder="—"
-          onBlur={(event) =>
-            onChange(event.target.value === "" ? null : Number(event.target.value))
-          }
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              const raw = event.currentTarget.value;
-              onChange(raw === "" ? null : Number(raw));
-            }
+          onChange={(event) => {
+            const raw = event.target.value;
+            setText(raw);
+            onChange(raw === "" ? null : Number(raw));
           }}
           className="tnum h-10 w-20 rounded-[var(--radius)] border border-border bg-surface-2 px-2 text-right text-base"
         />
@@ -442,15 +520,14 @@ function TextField({
       <label htmlFor={`m-${def.slug}`} className="text-sm font-medium">
         {def.label}
       </label>
-      {/* Written when you leave the field, for the same reason. */}
+      {/* Held in the draft as it is typed, for the same reason. */}
       <textarea
         id={`m-${def.slug}`}
-        defaultValue={value}
-        key={value}
+        value={value}
         disabled={disabled}
         rows={2}
         placeholder={def.help ?? undefined}
-        onBlur={(event) => onChange(event.target.value)}
+        onChange={(event) => onChange(event.target.value)}
         className="mt-1 w-full rounded-[var(--radius)] border border-border bg-surface-2 px-3 py-2 text-sm"
       />
     </div>

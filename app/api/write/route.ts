@@ -433,6 +433,9 @@ export async function POST(request: Request) {
           );
         }
 
+        // Range-check everything before touching the table, so a bad value
+        // in a batch of ten cannot leave the other nine written.
+        const rows: { metric: string; numeric: number | null; text: string | null }[] = [];
         for (const entry of input.metrics) {
           const def = known.get(entry.metric)!;
           const numeric = entry.value_numeric ?? null;
@@ -448,45 +451,67 @@ export async function POST(request: Request) {
             }
           }
           const text = entry.value_text?.trim() ? entry.value_text.trim() : null;
+          rows.push({ metric: entry.metric, numeric, text });
+        }
 
-          // Clearing a field removes the row: a blank is "not recorded", which
-          // is different from a recorded zero.
-          if (numeric === null && text === null) {
-            const { error } = await db
-              .from("daily_metrics")
-              .delete()
-              .eq("metric_date", input.date)
-              .eq("metric", entry.metric)
-              .eq("provenance", "logged");
-            if (error) throw error;
-            continue;
-          }
+        // The whole check-in arrives in one request, so it is written in a
+        // handful of statements rather than two per dimension. Filling this
+        // in used to be thirteen requests, each followed by a re-render of
+        // the day's screen.
 
+        // Clearing a field removes the row: a blank is "not recorded", which
+        // is different from a recorded zero.
+        const cleared = rows.filter((r) => r.numeric === null && r.text === null);
+        if (cleared.length) {
+          const { error } = await db
+            .from("daily_metrics")
+            .delete()
+            .eq("metric_date", input.date)
+            .eq("provenance", "logged")
+            .in("metric", cleared.map((r) => r.metric));
+          if (error) throw error;
+        }
+
+        const written = rows.filter((r) => r.numeric !== null || r.text !== null);
+        if (written.length) {
           const { data: existing, error: findError } = await db
             .from("daily_metrics")
-            .select("id")
+            .select("id, metric")
             .eq("metric_date", input.date)
-            .eq("metric", entry.metric)
             .eq("provenance", "logged")
-            .maybeSingle();
+            .in("metric", written.map((r) => r.metric));
           if (findError) throw findError;
 
-          if (existing) {
-            const { error } = await db
-              .from("daily_metrics")
-              .update({ value_numeric: numeric, value_text: text })
-              .eq("id", existing.id);
-            if (error) throw error;
-          } else {
-            const { error } = await db.from("daily_metrics").insert({
-              metric_date: input.date,
-              metric: entry.metric,
-              value_numeric: numeric,
-              value_text: text,
-              provenance: "logged",
-            });
+          // An edit keeps its row, so created_at stays the moment the answer
+          // was first given rather than the moment it was last corrected.
+          const byMetric = new Map((existing ?? []).map((row) => [row.metric, row.id]));
+          const fresh = written.filter((r) => !byMetric.has(r.metric));
+          const edits = written.filter((r) => byMetric.has(r.metric));
+
+          if (fresh.length) {
+            const { error } = await db.from("daily_metrics").insert(
+              fresh.map((r) => ({
+                metric_date: input.date,
+                metric: r.metric,
+                value_numeric: r.numeric,
+                value_text: r.text,
+                provenance: "logged" as const,
+              })),
+            );
             if (error) throw error;
           }
+
+          // Different values, so these cannot be one statement; they can at
+          // least be one round trip rather than a queue.
+          const updated = await Promise.all(
+            edits.map((r) =>
+              db
+                .from("daily_metrics")
+                .update({ value_numeric: r.numeric, value_text: r.text })
+                .eq("id", byMetric.get(r.metric)!),
+            ),
+          );
+          for (const result of updated) if (result.error) throw result.error;
         }
 
         const { data, error } = await db
