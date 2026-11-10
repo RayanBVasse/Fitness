@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { Card, SectionTitle } from "@/components/ui";
+import { DayNotes } from "@/components/today/DayNotes";
 import { DailyCheckIn } from "@/components/today/DailyCheckIn";
 import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
 import { londonTime, longDate, weekdayName } from "@/lib/time";
@@ -223,6 +224,21 @@ export function DayEditor({
       </Card>
       ) : null}
 
+      <Card>
+        <DayNotes
+          key={date}
+          date={date}
+          sessionId={null}
+          notes={notes}
+          allWorkstreams
+          subjects={[
+            ...exercises.filter((e) => hypertrophySets.some((row) => row.exercise_id === e.id) || notes.some((n) => n.exercise_id === e.id)).map((e) => ({ kind: "exercise" as const, id: e.id, name: e.name })),
+            ...skillVariations.filter((s) => calisthenicsEntries.some((row) => row.skill_variation_id === s.id) || notes.some((n) => n.skill_variation_id === s.id)).map((s) => ({ kind: "skill" as const, id: s.id, name: s.name })),
+          ]}
+          canWrite={!busy}
+        />
+      </Card>
+
       {/* Each session in full, and editable, exactly as Today renders it. */}
       {sessions.map((session, index) => (
         <div key={session.id} className="space-y-4">
@@ -348,7 +364,6 @@ export function DayEditor({
             defs={metricDefs}
             saved={metrics}
             lastValues={lastMetricValues}
-          notes={notes}
             canWrite={!busy}
           />
         </Card>

@@ -186,6 +186,34 @@ console.log("brief");
   check("notes are labelled as reports", text.includes("Not measurements"), text);
 }
 
+// Daily context and every workstream travel together, once each.
+{
+  const notes = ([null, "snatch", "hypertrophy", "calisthenics"] as const).map(
+    (workstream, index): BriefInput["notes"][number] => ({
+      id: `coach-note-${index}`,
+      external_source_id: `authored:${index}`,
+      note_type: "athlete_report",
+      category: "observation",
+      content: `Unique report for ${workstream ?? "the day"}.`,
+      anchor_date: empty.date,
+      period_label: null,
+      evidence_status: "user_reported",
+      sensitivity: "normal",
+      candidate_numeric: false,
+      tags: ["authored"],
+      review_status: "approved",
+      linked_session_id: null,
+      workstream,
+      exercise_id: null,
+      skill_variation_id: null,
+    }),
+  );
+  const { text } = composeDayBrief({ ...empty, notes });
+  for (const note of notes) {
+    check(`${note.workstream ?? "daily"} note reaches the Coach exactly once`, text.split(note.content).length === 2, text);
+  }
+}
+
 // --- a review of the day is not part of the day's facts ---------------------
 {
   const { text } = composeDayBrief({

@@ -1,0 +1,20 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+}
+
+.layout > * {
+  min-width: 0;
+}
+
+.tabs {
+  max-width: 32rem;
+}
+
+@media (min-width: 960px) {
+  .withSummary {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+}
