@@ -41,6 +41,7 @@ export default async function DayPage({ params }: { params: Promise<{ date: stri
     <DayEditor
       date={date}
       today={londonToday()}
+      gyms={reference.gyms}
       day={detail.day}
       sessions={detail.sessions}
       loggedCounts={detail.loggedCounts}

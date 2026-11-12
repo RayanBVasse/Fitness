@@ -352,7 +352,12 @@ export async function POST(request: Request) {
             session_date,
             gym_id: input.gym_id ?? null,
             gym_custom_label: input.gym_custom_label ?? null,
-            started_at: input.started_at ?? new Date().toISOString(),
+            // `??` would have turned an explicit null into now. A session
+            // written up two days later has no start time that anyone
+            // recorded, and inventing one puts a clock on the record that
+            // says something nobody observed.
+            started_at:
+              input.started_at === undefined ? new Date().toISOString() : input.started_at,
           })
           .select()
           .single();

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { Card, SectionTitle } from "@/components/ui";
+import { Chip, gymColour } from "@/components/design";
 import { DayNotes } from "@/components/today/DayNotes";
 import { DailyCheckIn } from "@/components/today/DailyCheckIn";
 import { DayPicker } from "@/components/day/DayPicker";
@@ -23,6 +24,7 @@ import {
   type DayRecord,
   type Exercise,
   type FailureMode,
+  type Gym,
   type HypertrophySet,
   type MuscleGroup,
   type MuscleRegion,
@@ -83,6 +85,7 @@ type Props = {
   skills: Skill[];
   skillVariations: SkillVariation[];
   assistanceTypes: AssistanceType[];
+  gyms: Gym[];
   isToday: boolean;
   /** Read on the server, so the arrows cannot disagree with the route. */
   today: string;
@@ -116,6 +119,7 @@ export function DayEditor({
   metricDefs,
   metrics,
   lastMetricValues,
+  gyms,
   isToday,
   today,
 }: Props) {
@@ -167,7 +171,23 @@ export function DayEditor({
       {!hasSessions ? (
       <Card>
         <SectionTitle>What was this day?</SectionTitle>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {/* The answer that was missing. Rest and Not recorded were the only
+              two, so a training day you forgot to open could be called
+              anything except what it was. No start time is sent: nobody
+              wrote one down at the time, and now is not when it happened. */}
+          <StatusButton
+            label="Trained"
+            active={false}
+            disabled={busy}
+            onClick={() => run(async () => {
+              await write({
+                action: "start_session",
+                session_date: date,
+                started_at: null,
+              });
+            })}
+          />
           <StatusButton
             label="Rest day"
             active={status === "rest"}
@@ -187,7 +207,8 @@ export function DayEditor({
         </div>
         <p className="mt-2 text-[11px] leading-snug text-text-dim">
           A rest day is a fact about the day. Leaving it unrecorded says nothing either way,
-          which is different.
+          which is different. Trained opens a visit to log into, and this question then
+          answers itself.
         </p>
 
         {status === "rest" && restDef ? (
@@ -271,6 +292,36 @@ export function DayEditor({
                 <span className="ml-1.5">· reconstructed</span>
               ) : null}
             </div>
+            {/* Where it happened. The day page could show a gym only if one
+                was already set, so a visit opened here had no way to say.
+                Same control as the header on today's screen. */}
+            {gyms.length > 0 ? (
+              <div className="flex flex-wrap justify-end gap-1.5">
+                {gyms.map((gym) => {
+                  const on = session.gym_id === gym.id;
+                  return (
+                    <Chip
+                      key={gym.id}
+                      size="sm"
+                      tone={gymColour(gym.id)}
+                      on={on}
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          await write({
+                            action: "update_session",
+                            session_id: session.id,
+                            gym_id: on ? null : gym.id,
+                          });
+                        })
+                      }
+                    >
+                      {gym.name}
+                    </Chip>
+                  );
+                })}
+              </div>
+            ) : null}
             {confirming?.id === session.id ? (
               <span className="flex shrink-0 items-center gap-1.5">
                 <button
