@@ -40,6 +40,7 @@ export default async function DayPage({ params }: { params: Promise<{ date: stri
   return (
     <DayEditor
       date={date}
+      today={londonToday()}
       day={detail.day}
       sessions={detail.sessions}
       loggedCounts={detail.loggedCounts}

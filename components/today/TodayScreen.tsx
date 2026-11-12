@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { write } from "@/lib/write";
 import { DailyCheckIn } from "@/components/today/DailyCheckIn";
+import { DayPicker } from "@/components/day/DayPicker";
 import { DayNotes } from "@/components/today/DayNotes";
 import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
 import { SessionWorkArea } from "@/components/session/SessionWorkArea";
@@ -187,6 +188,10 @@ export function TodayScreen({
         </div>
 
         <div className="flex flex-col items-end gap-2">
+          {/* Missing a day is noticed here, the morning after, so this is
+              where going back to it belongs. */}
+          <DayPicker date={date} today={date} label="Open a day" />
+
           {/* The only gym control. With a session open it records where you
               are; without one it is the gym the next session will start at.
               It used to do the second thing only, while a card further down

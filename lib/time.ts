@@ -59,6 +59,11 @@ export function weekStart(isoDate: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Shift an ISO date by whole days, in UTC so no clock change can move it. */
+export function addDays(date: string, days: number): string {
+  return new Date(Date.parse(date) + days * 86400000).toISOString().slice(0, 10);
+}
+
 /** Whole days between two YYYY-MM-DD dates. */
 export function daysBetween(fromIso: string, toIso: string): number {
   const ms = parseIsoDate(toIso).getTime() - parseIsoDate(fromIso).getTime();

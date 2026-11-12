@@ -1,4 +1,10 @@
 import { safeRead } from "./supabase";
+import { addDays } from "./time";
+
+// Re-exported: this module is where the range helpers were, and the briefs
+// import it from here. It lives in ./time now so a client component can use
+// it without pulling the Supabase client in behind it.
+export { addDays };
 import { getExperiments, getReferenceData } from "./queries";
 import type {
   ContextNote,
@@ -75,11 +81,6 @@ export interface WeekFacts {
   /** Rows in the week left out as reconstruction, so the omission is named. */
   importedRows: number;
   error: string | null;
-}
-
-/** Shift an ISO date by whole days, in UTC so no clock change can move it. */
-export function addDays(date: string, days: number): string {
-  return new Date(Date.parse(date) + days * 86400000).toISOString().slice(0, 10);
 }
 
 /**

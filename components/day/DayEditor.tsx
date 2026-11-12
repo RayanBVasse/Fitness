@@ -7,6 +7,7 @@ import { write } from "@/lib/write";
 import { Card, SectionTitle } from "@/components/ui";
 import { DayNotes } from "@/components/today/DayNotes";
 import { DailyCheckIn } from "@/components/today/DailyCheckIn";
+import { DayPicker } from "@/components/day/DayPicker";
 import { CoachReviewPanel } from "@/components/notes/CoachReviewPanel";
 import { londonTime, longDate, weekdayName } from "@/lib/time";
 import { SessionWorkArea } from "@/components/session/SessionWorkArea";
@@ -83,6 +84,8 @@ type Props = {
   skillVariations: SkillVariation[];
   assistanceTypes: AssistanceType[];
   isToday: boolean;
+  /** Read on the server, so the arrows cannot disagree with the route. */
+  today: string;
 };
 
 export function DayEditor({
@@ -114,6 +117,7 @@ export function DayEditor({
   metrics,
   lastMetricValues,
   isToday,
+  today,
 }: Props) {
   const router = useRouter();
   const [busy, startTransition] = useTransition();
@@ -148,9 +152,12 @@ export function DayEditor({
           </div>
           <h1 className="text-2xl font-bold leading-tight">{longDate(date)}</h1>
         </div>
-        <Link href="/history" className="text-sm text-text-faint underline underline-offset-2">
-          History
-        </Link>
+        <div className="flex items-center gap-3">
+          <DayPicker date={date} today={today} />
+          <Link href="/history" className="text-sm text-text-faint underline underline-offset-2">
+            History
+          </Link>
+        </div>
       </header>
 
       {/* Only when nothing was logged. A day with a session on it was a
